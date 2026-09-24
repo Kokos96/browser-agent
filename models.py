@@ -1,30 +1,50 @@
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class InputField:
-    type: str = "text"
-    name: str = ""
-    placeholder: str = ""
-    value: str = ""
+ActionType = Literal[
+    "fill",
+    "click",
+    "select",
+    "wait",
+    "finish",
+    "stop"
+]
 
 
-@dataclass
-class PageState:
+class Element(BaseModel):
+    id: int
+    tag: str
+    type: str | None = None
+    name: str | None = None
+    text: str = ""
+    placeholder: str | None = None
+    value: str | None = None
+    checked: bool | None = None
+
+
+class PageState(BaseModel):
     url: str
     title: str
-    headings: list[str] = field(default_factory=list)
-    buttons: list[str] = field(default_factory=list)
-    inputs: list[InputField] = field(default_factory=list)
-    text: str = ""
+    text: str
+    elements: list[Element]
+    screenshot_path: str | None = None
 
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "url": self.url,
-            "title": self.title,
-            "headings": self.headings,
-            "buttons": self.buttons,
-            "inputs": [input_field.__dict__ for input_field in self.inputs],
-            "text": self.text,
-        }
+
+class AgentAction(BaseModel):
+    action: ActionType
+
+    element_id: int | None = Field(
+        default=None,
+        description="ID of the element to interact with."
+    )
+
+    value: str | None = Field(
+        default=None,
+        description="Value to enter or select."
+    )
+
+    reason: str = Field(
+        description="Short reason for the action."
+    )
