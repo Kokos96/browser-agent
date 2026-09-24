@@ -1,55 +1,59 @@
 import asyncio
+
 from playwright.async_api import async_playwright
 
+from agent import BrowserAgent
 
-# URL тестового сайту
+
 URL = "https://quiz-web-wzr7.onrender.com/"
 
 
 async def main():
-    # Запускаємо Playwright
     async with async_playwright() as p:
-
-        # Запускаємо Chromium у звичайному режимі,
-        # щоб бачити дії агента
         browser = await p.chromium.launch(
             headless=False
         )
 
-        # Створюємо нову вкладку браузера
         page = await browser.new_page()
 
-        print("Відкриваю сайт...")
-
-        # Переходимо на сторінку тесту
         await page.goto(
             URL,
             wait_until="domcontentloaded"
         )
 
-        print("Сайт відкрито")
-        print("URL:", page.url)
+        agent = BrowserAgent(page)
 
-        # Отримуємо заголовок сторінки
-        title = await page.title()
+        # Агент аналізує поточну сторінку
+        state = await agent.inspect_page()
 
-        print("Заголовок:", title)
+        print("\nURL:")
+        print(state["url"])
 
-        # Отримуємо весь видимий текст сторінки
-        text = await page.locator("body").inner_text()
+        print("\nTitle:")
+        print(state["title"])
 
-        print("\nВміст сторінки:")
+        print("\nHeadings:")
+        for heading in state["headings"]:
+            print("-", heading)
+
+        print("\nButtons:")
+        for button in state["buttons"]:
+            print("-", button)
+
+        print("\nInputs:")
+        for input_data in state["inputs"]:
+            print("-", input_data)
+
+        print("\nPage text:")
         print("-" * 50)
-        print(text[:5000])
+        print(state["text"][:5000])
         print("-" * 50)
 
-        # Очікуємо натискання Enter перед закриттям браузера
         await asyncio.to_thread(
             input,
             "\nНатисніть Enter для завершення..."
         )
 
-        # Закриваємо браузер
         await browser.close()
 
 
