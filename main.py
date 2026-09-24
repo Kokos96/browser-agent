@@ -10,31 +10,31 @@ URL = "https://quiz-web-wzr7.onrender.com/"
 
 async def main():
     async with async_playwright() as p:
+        # Запускаємо браузер
         browser = await p.chromium.launch(
             headless=False
         )
 
+        # Створюємо сторінку
         page = await browser.new_page()
 
+        # Відкриваємо тест
         await page.goto(
             URL,
             wait_until="domcontentloaded"
         )
 
+        # Створюємо агента
         agent = BrowserAgent(page)
 
-        # Агент аналізує поточну сторінку
+        # Аналізуємо початкову сторінку
         state = await agent.inspect_page()
 
-        print("\nURL:")
+        print("URL:")
         print(state["url"])
 
         print("\nTitle:")
         print(state["title"])
-
-        print("\nHeadings:")
-        for heading in state["headings"]:
-            print("-", heading)
 
         print("\nButtons:")
         for button in state["buttons"]:
@@ -44,11 +44,29 @@ async def main():
         for input_data in state["inputs"]:
             print("-", input_data)
 
-        print("\nPage text:")
+        # Заповнюємо тестові дані
+        await agent.fill_user_data(
+            surname="Чорний",
+            name="Костянтин",
+            group="ФеП-22"
+        )
+
+        print("\nДані користувача заповнено")
+
+        # Запускаємо тест
+        await agent.start_test()
+
+        print("Тест запущено")
+
+        # Отримуємо новий стан сторінки
+        state = await agent.inspect_page()
+
+        print("\nНовий стан сторінки:")
         print("-" * 50)
         print(state["text"][:5000])
         print("-" * 50)
 
+        # Залишаємо браузер відкритим
         await asyncio.to_thread(
             input,
             "\nНатисніть Enter для завершення..."

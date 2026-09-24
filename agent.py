@@ -7,9 +7,11 @@ class BrowserAgent:
 
     async def inspect_page(self):
         # Отримуємо всі кнопки на сторінці
-        buttons = await self.page.locator("button").all_inner_texts()
+        buttons = await self.page.locator(
+            "button"
+        ).all_inner_texts()
 
-        # Отримуємо всі текстові поля
+        # Отримуємо всі поля введення
         inputs = await self.page.locator(
             "input"
         ).evaluate_all("""
@@ -39,3 +41,39 @@ class BrowserAgent:
             "inputs": inputs,
             "text": text
         }
+
+    async def fill_user_data(
+        self,
+        surname: str,
+        name: str,
+        group: str
+    ):
+        # Заповнюємо прізвище
+        await self.page.locator(
+            'input[name="surname"]'
+        ).fill(surname)
+
+        # Заповнюємо ім'я
+        await self.page.locator(
+            'input[name="name"]'
+        ).fill(name)
+
+        # Заповнюємо групу
+        await self.page.locator(
+            'input[name="grp"]'
+        ).fill(group)
+
+    async def start_test(self):
+        # Знаходимо кнопку початку тесту
+        button = self.page.get_by_role(
+            "button",
+            name="Почати тест"
+        )
+
+        # Натискаємо кнопку
+        await button.click()
+
+        # Чекаємо, поки сторінка стабілізується
+        await self.page.wait_for_load_state(
+            "domcontentloaded"
+        )
