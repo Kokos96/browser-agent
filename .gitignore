@@ -1,22 +1,15 @@
-# Virtual environment
 .venv/
-
-# Environment variables and secrets
 .env
 
-# Python cache
 __pycache__/
 *.py[cod]
 
-# Playwright
 .playwright/
 
-# Agent results
 results/
+screenshots/
 
-# IDE settings
 .vscode/
 
-# OS files
 .DS_Store
 Thumbs.db

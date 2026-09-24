@@ -4,19 +4,23 @@ from playwright.async_api import async_playwright
 
 from agent import BrowserAgent
 from browser import BrowserController
-from llm import GeminiClient
 from config import settings
+from llm import GeminiClient
 
 
 async def main():
+    async with async_playwright() as playwright:
 
-    async with async_playwright() as p:
-
-        browser = await p.chromium.launch(
+        browser = await playwright.chromium.launch(
             headless=settings.headless
         )
 
-        page = await browser.new_page()
+        page = await browser.new_page(
+            viewport={
+                "width": 1440,
+                "height": 900,
+            }
+        )
 
         browser_controller = BrowserController(
             page

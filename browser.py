@@ -1,12 +1,13 @@
 import os
 
-from playwright.async_api import (
-    Page,
-    Browser,
-)
+from playwright.async_api import Page
 
 
 class BrowserController:
+    SELECTOR = (
+        "input, button, textarea, select, a, img, "
+        "[role='button'], [role='radio'], [role='checkbox']"
+    )
 
     def __init__(
         self,
@@ -16,10 +17,7 @@ class BrowserController:
         self.page = page
         self.screenshots_dir = screenshots_dir
 
-        os.makedirs(
-            screenshots_dir,
-            exist_ok=True
-        )
+        os.makedirs(self.screenshots_dir, exist_ok=True)
 
     async def open(self, url: str):
         await self.page.goto(
@@ -28,41 +26,57 @@ class BrowserController:
         )
 
     async def inspect(self):
-        elements = await self.page.locator(
-            "input, button, textarea, select, "
-            "a, img, [role='button'], "
-            "[role='radio'], [role='checkbox']"
-        ).evaluate_all(
+        locator = self.page.locator(self.SELECTOR)
+
+        elements = await locator.evaluate_all(
             """
             elements => elements.map((element, index) => ({
                 id: index,
-                tag: element.tagName.toLowerCase(),
+
+                tag: element.tagName
+                    ? element.tagName.toLowerCase()
+                    : "",
+
                 type: element.getAttribute("type"),
+
                 name: element.getAttribute("name"),
+
                 text: (
                     element.innerText ||
                     element.textContent ||
                     ""
-                ).trim().slice(0, 500),
-                placeholder:
-                    element.getAttribute("placeholder"),
+                ).trim().slice(0, 1000),
+
+                placeholder: element.getAttribute("placeholder"),
+
+                // Дуже важливо:
+                // беремо реальне поточне значення DOM-елемента.
                 value:
-                    element.getAttribute("value"),
+                    "value" in element
+                        ? element.value
+                        : element.getAttribute("value"),
+
                 checked:
-                    element.checked ?? null
+                    "checked" in element
+                        ? Boolean(element.checked)
+                        : null,
+
+                aria_label:
+                    element.getAttribute("aria-label"),
+
+                html_id:
+                    element.getAttribute("id")
             }))
             """
         )
 
-        text = await self.page.locator(
-            "body"
-        ).inner_text()
+        body_text = await self.page.locator("body").inner_text()
 
         return {
             "url": self.page.url,
             "title": await self.page.title(),
-            "text": text[:12000],
-            "elements": elements
+            "text": body_text[:20000],
+            "elements": elements,
         }
 
     async def screenshot(self, step: int):
@@ -79,43 +93,65 @@ class BrowserController:
         return path
 
     async def click(self, element_id: int):
-        locator = self._element(
-            element_id
-        )
+        element = self._element(element_id)
 
-        await locator.click()
+        await element.scroll_into_view_if_needed()
+        await element.click()
 
     async def fill(
         self,
         element_id: int,
         value: str
     ):
-        locator = self._element(
-            element_id
-        )
+        element = self._element(element_id)
 
-        await locator.fill(value)
+        await element.scroll_into_view_if_needed()
+        await element.fill(value)
 
     async def select(
         self,
-        element_id: int
+        element_id: int,
+        value: str | None = None
     ):
-        locator = self._element(
-            element_id
+        element = self._element(element_id)
+
+        tag = await element.evaluate(
+            "element => element.tagName.toLowerCase()"
         )
 
-        await locator.check()
+        if tag == "select":
+            if value is None:
+                raise ValueError(
+                    "select element requires a value"
+                )
 
-    async def wait(self):
-        await self.page.wait_for_timeout(
-            1000
-        )
+            await element.select_option(value)
+            return
+
+        element_type = await element.get_attribute("type")
+
+        if element_type in {"radio", "checkbox"}:
+            await element.check()
+            return
+
+        await element.click()
+
+    async def wait(self, milliseconds: int = 1000):
+        await self.page.wait_for_timeout(milliseconds)
+
+    async def current_url(self):
+        return self.page.url
+
+    async def wait_for_navigation(self):
+        try:
+            await self.page.wait_for_load_state(
+                "domcontentloaded",
+                timeout=5000
+            )
+        except Exception:
+            pass
 
     def _element(self, element_id: int):
-        locator = self.page.locator(
-            "input, button, textarea, select, "
-            "a, img, [role='button'], "
-            "[role='radio'], [role='checkbox']"
-        )
+        locator = self.page.locator(self.SELECTOR)
 
         return locator.nth(element_id)

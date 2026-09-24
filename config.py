@@ -8,9 +8,10 @@ load_dotenv()
 
 class Settings:
     gemini_api_key = os.getenv("GEMINI_API_KEY")
+
     gemini_model = os.getenv(
         "GEMINI_MODEL",
-        "gemini-3.8-flash"
+        "gemini-3.6-flash"
     )
 
     test_url = os.getenv(
@@ -34,7 +35,10 @@ class Settings:
     )
 
     max_steps = int(
-        os.getenv("MAX_STEPS", "40")
+        os.getenv(
+            "MAX_STEPS",
+            "60"
+        )
     )
 
     enable_vision = (
@@ -49,6 +53,15 @@ class Settings:
             "HEADLESS",
             "false"
         ).lower() == "true"
+    )
+
+    # Скільки разів поспіль можна виконувати
+    # однакову дію без зміни сторінки.
+    max_same_action = int(
+        os.getenv(
+            "MAX_SAME_ACTION",
+            "3"
+        )
     )
 
 
