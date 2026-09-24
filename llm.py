@@ -1,20 +1,48 @@
-from typing import Any
+from google import genai
 
 from config import settings
+from models import AgentAction
+from prompts import (
+    SYSTEM_PROMPT,
+    build_prompt,
+)
 
 
 class GeminiClient:
-    """Small integration boundary for the LLM used by the agent loop."""
 
-    def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or settings.gemini_api_key
-        self.model = settings.gemini_model
-
-    async def generate(self, prompt: str, context: dict[str, Any] | None = None) -> str:
-        if not self.api_key:
+    def __init__(self):
+        if not settings.gemini_api_key:
             raise RuntimeError(
-                "GEMINI_API_KEY is not configured in the .env file"
+                "GEMINI_API_KEY is not configured."
             )
-        raise NotImplementedError(
-            "Add the selected Gemini SDK transport in GeminiClient.generate()"
+
+        self.client = genai.Client(
+            api_key=settings.gemini_api_key
+        )
+
+    async def decide(
+        self,
+        page_state: dict,
+        user_data: dict
+    ) -> AgentAction:
+
+        prompt = build_prompt(
+            page_state,
+            user_data
+        )
+
+        response = await self.client.aio.models.generate_content(
+            model=settings.gemini_model,
+            contents=[
+                SYSTEM_PROMPT,
+                prompt
+            ],
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": AgentAction.model_json_schema()
+            }
+        )
+
+        return AgentAction.model_validate_json(
+            response.text
         )
