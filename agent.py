@@ -49,54 +49,36 @@ class BrowserAgent:
 
             if settings.enable_vision:
                 screenshot_path = (
-                    await self.browser.screenshot(
-                        step
-                    )
+                    await self.browser.screenshot(step)
                 )
 
-            state["screenshot_path"] = (
-                screenshot_path
-            )
+            state["screenshot_path"] = screenshot_path
 
-            print(
-                "Page:",
-                state["title"]
-            )
-
-            print(
-                "URL:",
-                state["url"]
-            )
-
+            print("Page:", state["title"])
+            print("URL:", state["url"])
             print(
                 "Interactive elements:",
                 len(state["elements"])
             )
+
+            # Заповнюємо відомі поля без використання LLM.
+            # Це економить API-запити.
+            bootstrap_done = await self.bootstrap_test(
+                state
+            )
+
+            if bootstrap_done:
+                continue
 
             action = await self.llm.decide(
                 state,
                 self.user_data
             )
 
-            print(
-                "Action:",
-                action.action
-            )
-
-            print(
-                "Element:",
-                action.element_id
-            )
-
-            print(
-                "Value:",
-                action.value
-            )
-
-            print(
-                "Reason:",
-                action.reason
-            )
+            print("Action:", action.action)
+            print("Element:", action.element_id)
+            print("Value:", action.value)
+            print("Reason:", action.reason)
 
             self.history.append({
                 "step": step,
@@ -104,19 +86,110 @@ class BrowserAgent:
                 "action": action.model_dump()
             })
 
-            should_stop = await self.execute(
-                action
-            )
+            should_stop = await self.execute(action)
 
             if should_stop:
                 break
 
         await self.save_history()
 
-    async def execute(
+    async def bootstrap_test(
         self,
-        action
-    ):
+        state: dict
+    ) -> bool:
+
+        elements = state["elements"]
+
+        for element in elements:
+
+            name = (
+                element.get("name") or ""
+            ).lower()
+
+            value = (
+                element.get("value") or ""
+            )
+
+            if name == "surname":
+                if (
+                    not value
+                    and self.user_data["surname"]
+                ):
+                    print(
+                        "Bootstrap: filling surname"
+                    )
+
+                    await self.browser.fill(
+                        element["id"],
+                        self.user_data["surname"]
+                    )
+
+                    return True
+
+            if name == "name":
+                if (
+                    not value
+                    and self.user_data["name"]
+                ):
+                    print(
+                        "Bootstrap: filling name"
+                    )
+
+                    await self.browser.fill(
+                        element["id"],
+                        self.user_data["name"]
+                    )
+
+                    return True
+
+            if name == "grp":
+                if (
+                    not value
+                    and self.user_data["group"]
+                ):
+                    print(
+                        "Bootstrap: filling group"
+                    )
+
+                    await self.browser.fill(
+                        element["id"],
+                        self.user_data["group"]
+                    )
+
+                    return True
+
+        # Коли всі поля заповнені,
+        # натискаємо кнопку початку тесту.
+        for element in elements:
+
+            tag = (
+                element.get("tag") or ""
+            ).lower()
+
+            text = (
+                element.get("text") or ""
+            ).strip().lower()
+
+            if (
+                tag == "button"
+                and "почати тест" in text
+            ):
+
+                print(
+                    "Bootstrap: starting test"
+                )
+
+                await self.browser.click(
+                    element["id"]
+                )
+
+                await self.browser.wait()
+
+                return True
+
+        return False
+
+    async def execute(self, action):
 
         if action.action == "fill":
 
@@ -148,6 +221,8 @@ class BrowserAgent:
                 action.element_id
             )
 
+            await self.browser.wait()
+
             return False
 
         if action.action == "select":
@@ -171,17 +246,13 @@ class BrowserAgent:
 
         if action.action == "finish":
 
-            print(
-                "Agent finished."
-            )
+            print("Agent finished.")
 
             return True
 
         if action.action == "stop":
 
-            print(
-                "Agent stopped."
-            )
+            print("Agent stopped.")
 
             return True
 
@@ -194,9 +265,7 @@ class BrowserAgent:
             exist_ok=True
         )
 
-        path = (
-            "results/agent_history.json"
-        )
+        path = "results/agent_history.json"
 
         with open(
             path,
