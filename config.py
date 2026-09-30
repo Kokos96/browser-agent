@@ -7,7 +7,10 @@ load_dotenv()
 
 
 class Settings:
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
+
+    gemini_api_key = os.getenv(
+        "GEMINI_API_KEY"
+    )
 
     gemini_model = os.getenv(
         "GEMINI_MODEL",
@@ -37,14 +40,14 @@ class Settings:
     max_steps = int(
         os.getenv(
             "MAX_STEPS",
-            "60"
+            "80"
         )
     )
 
     enable_vision = (
         os.getenv(
             "ENABLE_VISION",
-            "true"
+            "false"
         ).lower() == "true"
     )
 
@@ -55,13 +58,25 @@ class Settings:
         ).lower() == "true"
     )
 
-    # Скільки разів поспіль можна виконувати
-    # однакову дію без зміни сторінки.
     max_same_action = int(
         os.getenv(
             "MAX_SAME_ACTION",
             "3"
         )
+    )
+
+    test_load_timeout = int(
+        os.getenv(
+            "TEST_LOAD_TIMEOUT",
+            "20"
+        )
+    )
+
+    auto_submit = (
+        os.getenv(
+            "AUTO_SUBMIT",
+            "true"
+        ).lower() == "true"
     )
 
 

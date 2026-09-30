@@ -1,16 +1,4 @@
-from typing import Literal
-
 from pydantic import BaseModel, Field
-
-
-ActionType = Literal[
-    "fill",
-    "click",
-    "select",
-    "wait",
-    "finish",
-    "stop",
-]
 
 
 class Element(BaseModel):
@@ -24,6 +12,7 @@ class Element(BaseModel):
     checked: bool | None = None
     aria_label: str | None = None
     html_id: str | None = None
+    context: str = ""
 
 
 class PageState(BaseModel):
@@ -34,16 +23,32 @@ class PageState(BaseModel):
     screenshot_path: str | None = None
 
 
-class AgentAction(BaseModel):
-    action: ActionType
-    element_id: int | None = Field(
-        default=None,
-        description="ID of the element to interact with."
+class BatchSelection(BaseModel):
+    question_number: int = Field(
+        description="Question number starting from 1."
     )
-    value: str | None = Field(
-        default=None,
-        description="Value to enter or select."
+
+    element_id: int = Field(
+        description="ID of the answer element to select."
     )
+
     reason: str = Field(
-        description="Short reason for the action."
+        description="Very short reason for the selected answer."
+    )
+
+
+class BatchPlan(BaseModel):
+    selections: list[BatchSelection] = Field(
+        description=(
+            "One selected answer for each multiple-choice "
+            "question visible on the page."
+        )
+    )
+
+    total_questions: int = Field(
+        description="Number of questions the model identified."
+    )
+
+    reason: str = Field(
+        description="Short summary of the plan."
     )

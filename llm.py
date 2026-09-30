@@ -1,16 +1,18 @@
-import asyncio
-import re
-
 from google import genai
 from google.genai import types
 
 from config import settings
-from models import AgentAction
-from prompts import SYSTEM_PROMPT, build_prompt
+from models import BatchPlan
+from prompts import (
+    SYSTEM_PROMPT,
+    build_batch_prompt
+)
 
 
 class GeminiClient:
+
     def __init__(self):
+
         if not settings.gemini_api_key:
             raise RuntimeError(
                 "GEMINI_API_KEY is not configured."
@@ -22,13 +24,13 @@ class GeminiClient:
 
         self.model = settings.gemini_model
 
-    async def decide(
+    async def plan_test(
         self,
         page_state: dict,
         user_data: dict
-    ) -> AgentAction:
+    ) -> BatchPlan:
 
-        prompt = build_prompt(
+        prompt = build_batch_prompt(
             page_state,
             user_data
         )
@@ -46,13 +48,17 @@ class GeminiClient:
             settings.enable_vision
             and screenshot_path
         ):
+
             try:
+
                 with open(
                     screenshot_path,
                     "rb"
                 ) as image_file:
 
-                    image_bytes = image_file.read()
+                    image_bytes = (
+                        image_file.read()
+                    )
 
                 contents.append(
                     types.Part.from_bytes(
@@ -62,32 +68,38 @@ class GeminiClient:
                 )
 
             except Exception as error:
+
                 print(
-                    "Vision input could not be attached:",
+                    "Vision error:",
                     error
                 )
 
+        print()
+        print(
+            "Gemini: generating COMPLETE test plan..."
+        )
+
+        print(
+            "Model:",
+            self.model
+        )
+
         try:
-            print(
-                "Gemini request..."
-            )
 
-            response = await self.client.aio.models.generate_content(
-                model=self.model,
-                contents=contents,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": (
-                        AgentAction.model_json_schema()
-                    ),
-                }
-            )
-
-            return AgentAction.model_validate_json(
-                response.text
+            response = (
+                await self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=BatchPlan,
+                        temperature=0.1,
+                    )
+                )
             )
 
         except Exception as error:
+
             error_text = str(error)
 
             print(
@@ -95,71 +107,56 @@ class GeminiClient:
                 error_text
             )
 
-            retry_seconds = self._extract_retry_delay(
-                error_text
-            )
+            if "429" in error_text:
 
-            if retry_seconds is not None:
-                print(
-                    f"Gemini requested retry after "
-                    f"{retry_seconds} seconds."
-                )
-
-                await asyncio.sleep(
-                    retry_seconds
-                )
-
-                try:
-                    response = (
-                        await self.client.aio.models.generate_content(
-                            model=self.model,
-                            contents=contents,
-                            config={
-                                "response_mime_type": "application/json",
-                                "response_schema": (
-                                    AgentAction.model_json_schema()
-                                ),
-                            }
-                        )
-                    )
-
-                    return AgentAction.model_validate_json(
-                        response.text
-                    )
-
-                except Exception as retry_error:
-                    raise RuntimeError(
-                        "Gemini request failed after "
-                        "server-requested retry."
-                    ) from retry_error
+                raise RuntimeError(
+                    "Gemini RPD/RPM quota exceeded. "
+                    "The agent intentionally does not retry."
+                ) from error
 
             raise RuntimeError(
                 "Gemini request failed."
             ) from error
 
-    @staticmethod
-    def _extract_retry_delay(
-        error_text: str
-    ) -> int | None:
+        if not response.text:
 
-        match = re.search(
-            r"retryDelay['\"]?\s*:\s*['\"]?(\d+)s",
-            error_text
+            raise RuntimeError(
+                "Gemini returned an empty response."
+            )
+
+        try:
+
+            plan = BatchPlan.model_validate_json(
+                response.text
+            )
+
+        except Exception as error:
+
+            print(
+                "Invalid Gemini response:"
+            )
+
+            print(
+                response.text
+            )
+
+            raise RuntimeError(
+                "Gemini returned invalid structured output."
+            ) from error
+
+        print()
+        print(
+            "Gemini plan received."
         )
 
-        if match:
-            return int(match.group(1)) + 2
-
-        match = re.search(
-            r"retry in\s+(\d+)\s*seconds?",
-            error_text,
-            re.IGNORECASE
+        print(
+            "Questions:",
+            plan.total_questions
         )
 
-        if match:
-            return int(match.group(1)) + 2
+        print(
+            "Selections:",
+            len(plan.selections)
+        )
 
-        if "429" in error_text:
-            return 65
-
-        return None
+        return plan

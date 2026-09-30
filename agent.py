@@ -7,11 +7,13 @@ from llm import GeminiClient
 
 
 class BrowserAgent:
+
     def __init__(
         self,
         browser: BrowserController,
         llm: GeminiClient
     ):
+
         self.browser = browser
         self.llm = llm
 
@@ -23,24 +25,35 @@ class BrowserAgent:
 
         self.history = []
 
-        self.last_action = None
-        self.same_action_count = 0
-
     async def run(self):
+
         print("Agent started")
-        print("URL:", settings.test_url)
+
+        print(
+            "URL:",
+            settings.test_url
+        )
 
         await self.browser.open(
             settings.test_url
         )
 
+        # ---------------------------------------------
+        # STEP 1:
+        # Bootstrap form.
+        # Gemini is NOT used.
+        # ---------------------------------------------
+
         for step in range(
             1,
             settings.max_steps + 1
         ):
+
             print()
             print("=" * 60)
-            print(f"STEP {step}")
+            print(
+                f"BOOTSTRAP STEP {step}"
+            )
             print("=" * 60)
 
             state = await self.browser.inspect()
@@ -60,18 +73,12 @@ class BrowserAgent:
                 len(state["elements"])
             )
 
-            self.print_elements(
-                state["elements"]
-            )
+            if self.is_loading(
+                state
+            ):
 
-            # -------------------------------------------------
-            # 1. Чекаємо завантаження сайту.
-            # Gemini тут НЕ використовується.
-            # -------------------------------------------------
-
-            if self.is_loading_page(state):
                 print(
-                    "Browser: application is loading."
+                    "Browser: waiting for Render..."
                 )
 
                 await self.browser.wait(
@@ -80,138 +87,306 @@ class BrowserAgent:
 
                 continue
 
-            # -------------------------------------------------
-            # 2. Виконуємо стартову форму.
-            # Gemini тут НЕ використовується.
-            # -------------------------------------------------
+            if await self.bootstrap(
+                state
+            ):
 
-            bootstrap_result = (
-                await self.bootstrap_test(
-                    state
-                )
-            )
-
-            if bootstrap_result:
                 continue
 
-            # -------------------------------------------------
-            # 3. Тільки тепер потрібен AI.
-            # -------------------------------------------------
+            break
 
-            screenshot_path = None
+        # ---------------------------------------------
+        # STEP 2:
+        # Wait for actual test.
+        # Gemini is NOT used.
+        # ---------------------------------------------
 
-            if settings.enable_vision:
-                screenshot_path = (
-                    await self.browser.screenshot(
-                        step
-                    )
-                )
+        print()
+        print("=" * 60)
+        print("WAITING FOR TEST")
+        print("=" * 60)
 
-            state["screenshot_path"] = (
-                screenshot_path
-            )
+        state = await self.browser.inspect()
 
-            print()
+        if self.is_empty_test_page(
+            state
+        ):
+
             print(
-                "AI: asking Gemini..."
+                "Browser: /start is still loading."
             )
 
-            action = await self.llm.decide(
+            state = (
+                await self.browser.wait_for_test(
+                    settings.test_load_timeout
+                )
+            )
+
+        print(
+            "Test URL:",
+            state["url"]
+        )
+
+        print(
+            "Interactive elements:",
+            len(state["elements"])
+        )
+
+        print(
+            "Page text length:",
+            len(state["text"])
+        )
+
+        # ---------------------------------------------
+        # STEP 3:
+        # One Gemini request for the entire test.
+        # ---------------------------------------------
+
+        if self.is_empty_test_page(
+            state
+        ):
+
+            self.save_debug_state(
+                state
+            )
+
+            print(
+                "ERROR: test content did not load."
+            )
+
+            await self.save_history()
+
+            return
+
+        screenshot_path = None
+
+        if settings.enable_vision:
+
+            screenshot_path = (
+                await self.browser.screenshot(
+                    999
+                )
+            )
+
+        state[
+            "screenshot_path"
+        ] = screenshot_path
+
+        # ---------------------------------------------
+        # Print useful diagnostics.
+        # ---------------------------------------------
+
+        radio_count = 0
+        checkbox_count = 0
+
+        for element in state[
+            "elements"
+        ]:
+
+            element_type = (
+                element.get("type")
+                or ""
+            ).lower()
+
+            if element_type == "radio":
+                radio_count += 1
+
+            if element_type == "checkbox":
+                checkbox_count += 1
+
+        print()
+        print(
+            "Radio controls:",
+            radio_count
+        )
+
+        print(
+            "Checkbox controls:",
+            checkbox_count
+        )
+
+        print()
+        print(
+            "AI: ONE request for the complete test."
+        )
+
+        try:
+
+            plan = await self.llm.plan_test(
                 state,
                 self.user_data
             )
 
-            print(
-                "Action:",
-                action.action
-            )
+        except RuntimeError as error:
 
+            print()
             print(
-                "Element:",
-                action.element_id
-            )
-
-            print(
-                "Value:",
-                action.value
-            )
-
-            print(
-                "Reason:",
-                action.reason
+                "AI STOP:",
+                error
             )
 
             self.history.append(
                 {
-                    "step": step,
+                    "error": str(error),
                     "state": state,
-                    "action": action.model_dump(),
                 }
             )
 
-            if self.is_repeated_action(
-                action
+            await self.save_history()
+
+            return
+
+        # ---------------------------------------------
+        # Validate the returned plan.
+        # ---------------------------------------------
+
+        valid_ids = {
+            element["id"]
+            for element in state[
+                "elements"
+            ]
+        }
+
+        valid_selections = []
+
+        for selection in plan.selections:
+
+            if (
+                selection.element_id
+                not in valid_ids
             ):
+
                 print(
-                    "Warning: repeated identical action."
+                    "WARNING: Gemini returned "
+                    "unknown element:",
+                    selection.element_id
                 )
 
-                if (
-                    self.same_action_count
-                    >= settings.max_same_action
-                ):
-                    print(
-                        "Agent stopped because of "
-                        "an action loop."
-                    )
-                    break
+                continue
 
-            should_stop = await self.execute(
-                action
+            valid_selections.append(
+                selection
             )
 
-            if should_stop:
-                break
+        print()
+        print(
+            "Valid selections:",
+            len(valid_selections)
+        )
+
+        print(
+            "Gemini reported questions:",
+            plan.total_questions
+        )
+
+        # ---------------------------------------------
+        # Execute all selections.
+        # No additional Gemini calls.
+        # ---------------------------------------------
+
+        for selection in valid_selections:
+
+            print(
+                f"Question "
+                f"{selection.question_number}: "
+                f"select element "
+                f"{selection.element_id}"
+            )
+
+            try:
+
+                await self.browser.select(
+                    selection.element_id
+                )
+
+                self.history.append(
+                    {
+                        "question":
+                            selection.question_number,
+
+                        "element_id":
+                            selection.element_id,
+
+                        "reason":
+                            selection.reason,
+                    }
+                )
+
+            except Exception as error:
+
+                print(
+                    "Selection error:",
+                    error
+                )
+
+        # ---------------------------------------------
+        # Finished selecting answers.
+        # ---------------------------------------------
+
+        print()
+        print("=" * 60)
+        print("ALL PLANNED ANSWERS EXECUTED")
+        print("=" * 60)
+
+        # ---------------------------------------------
+        # Look for final submit button.
+        # ---------------------------------------------
+
+        final_state = (
+            await self.browser.inspect()
+        )
+
+        submit_id = (
+            self.find_submit_button(
+                final_state
+            )
+        )
+
+        if submit_id is not None:
+
+            print(
+                "Final button found:",
+                submit_id
+            )
+
+            if settings.auto_submit:
+
+                print(
+                    "Browser: submitting test..."
+                )
+
+                await self.browser.click(
+                    submit_id
+                )
+
+                await self.browser.wait(
+                    1500
+                )
+
+                print(
+                    "Browser: test submitted."
+                )
+
+            else:
+
+                print(
+                    "AUTO_SUBMIT=false"
+                )
+
+                print(
+                    "Test answers are selected. "
+                    "Submit manually."
+                )
+
+        else:
+
+            print(
+                "No final submit button detected."
+            )
 
         await self.save_history()
 
-    def print_elements(
-        self,
-        elements: list[dict]
-    ):
-        print()
-        print("Elements:")
-
-        for element in elements:
-            value = element.get(
-                "value"
-            )
-
-            text = element.get(
-                "text"
-            )
-
-            name = element.get(
-                "name"
-            )
-
-            element_id = element.get(
-                "id"
-            )
-
-            tag = element.get(
-                "tag"
-            )
-
-            print(
-                f"  ID={element_id} "
-                f"tag={tag} "
-                f"name={name!r} "
-                f"value={value!r} "
-                f"text={text!r}"
-            )
-
-    def is_loading_page(
+    def is_loading(
         self,
         state: dict
     ) -> bool:
@@ -224,150 +399,204 @@ class BrowserAgent:
             state["text"] or ""
         ).lower()
 
-        loading_titles = [
+        phrases = [
             "application loading",
             "render - application loading",
-            "loading",
-        ]
-
-        for phrase in loading_titles:
-            if phrase in title:
-                return True
-
-        loading_phrases = [
-            "application loading",
             "loading...",
         ]
 
-        for phrase in loading_phrases:
+        for phrase in phrases:
+
+            if phrase in title:
+                return True
+
             if phrase in text:
                 return True
 
         return False
 
-    async def bootstrap_test(
+    def is_empty_test_page(
         self,
         state: dict
     ) -> bool:
 
-        elements = state["elements"]
+        url = (
+            state["url"] or ""
+        ).lower()
 
-        # -----------------------------------------------------
+        elements = state[
+            "elements"
+        ]
+
+        text = (
+            state["text"] or ""
+        ).strip()
+
+        if (
+            url.rstrip("/").endswith("/start")
+            and not elements
+        ):
+
+            return True
+
+        if (
+            not elements
+            and len(text) < 150
+        ):
+
+            return True
+
+        return False
+
+    async def bootstrap(
+        self,
+        state: dict
+    ) -> bool:
+
+        elements = state[
+            "elements"
+        ]
+
+        # ---------------------------------------------
         # Surname
-        # -----------------------------------------------------
+        # ---------------------------------------------
 
-        surname = self.find_input(
+        element = self.find_by_name(
             elements,
             "surname"
         )
 
-        if surname:
-            current_value = (
-                surname.get("value") or ""
+        if element:
+
+            value = (
+                element.get("value")
+                or ""
             ).strip()
 
             if (
-                not current_value
-                and self.user_data["surname"]
+                not value
+                and self.user_data[
+                    "surname"
+                ]
             ):
+
                 print(
                     "Browser: filling surname"
                 )
 
                 await self.browser.fill(
-                    surname["id"],
-                    self.user_data["surname"]
+                    element["id"],
+                    self.user_data[
+                        "surname"
+                    ]
                 )
 
                 await self.browser.wait(
-                    150
+                    200
                 )
 
                 return True
 
-        # -----------------------------------------------------
+        # ---------------------------------------------
         # Name
-        # -----------------------------------------------------
+        # ---------------------------------------------
 
-        name = self.find_input(
+        element = self.find_by_name(
             elements,
             "name"
         )
 
-        if name:
-            current_value = (
-                name.get("value") or ""
+        if element:
+
+            value = (
+                element.get("value")
+                or ""
             ).strip()
 
             if (
-                not current_value
-                and self.user_data["name"]
+                not value
+                and self.user_data[
+                    "name"
+                ]
             ):
+
                 print(
                     "Browser: filling name"
                 )
 
                 await self.browser.fill(
-                    name["id"],
-                    self.user_data["name"]
+                    element["id"],
+                    self.user_data[
+                        "name"
+                    ]
                 )
 
                 await self.browser.wait(
-                    150
+                    200
                 )
 
                 return True
 
-        # -----------------------------------------------------
+        # ---------------------------------------------
         # Group
-        # -----------------------------------------------------
+        # ---------------------------------------------
 
-        group = self.find_input(
+        element = self.find_by_name(
             elements,
             "grp"
         )
 
-        if group:
-            current_value = (
-                group.get("value") or ""
+        if element:
+
+            value = (
+                element.get("value")
+                or ""
             ).strip()
 
             if (
-                not current_value
-                and self.user_data["group"]
+                not value
+                and self.user_data[
+                    "group"
+                ]
             ):
+
                 print(
                     "Browser: filling group"
                 )
 
                 await self.browser.fill(
-                    group["id"],
-                    self.user_data["group"]
+                    element["id"],
+                    self.user_data[
+                        "group"
+                    ]
                 )
 
                 await self.browser.wait(
-                    150
+                    200
                 )
 
                 return True
 
-        # -----------------------------------------------------
-        # Start button
-        # -----------------------------------------------------
+        # ---------------------------------------------
+        # Start test
+        # ---------------------------------------------
 
         for element in elements:
+
             tag = (
-                element.get("tag") or ""
+                element.get("tag")
+                or ""
             ).lower()
 
             text = (
-                element.get("text") or ""
+                element.get("text")
+                or ""
             ).strip().lower()
 
             if tag != "button":
                 continue
 
-            start_phrases = [
+            phrases = [
                 "почати тест",
                 "почати",
                 "start test",
@@ -376,8 +605,9 @@ class BrowserAgent:
 
             if any(
                 phrase in text
-                for phrase in start_phrases
+                for phrase in phrases
             ):
+
                 print(
                     "Browser: starting test"
                 )
@@ -395,125 +625,102 @@ class BrowserAgent:
         return False
 
     @staticmethod
-    def find_input(
+    def find_by_name(
         elements: list[dict],
         name: str
     ) -> dict | None:
 
         for element in elements:
+
             element_name = (
-                element.get("name") or ""
+                element.get("name")
+                or ""
             ).lower()
 
-            if element_name == name.lower():
+            if (
+                element_name
+                == name.lower()
+            ):
+
                 return element
 
         return None
 
-    def is_repeated_action(
-        self,
-        action
-    ) -> bool:
+    @staticmethod
+    def find_submit_button(
+        state: dict
+    ) -> int | None:
 
-        current = (
-            action.action,
-            action.element_id,
-            action.value
+        phrases = [
+            "завершити тест",
+            "завершити",
+            "відправити",
+            "відправити відповіді",
+            "закінчити тест",
+            "submit",
+            "finish test",
+            "finish",
+        ]
+
+        for element in state[
+            "elements"
+        ]:
+
+            tag = (
+                element.get("tag")
+                or ""
+            ).lower()
+
+            text = (
+                element.get("text")
+                or ""
+            ).strip().lower()
+
+            if tag != "button":
+                continue
+
+            if any(
+                phrase in text
+                for phrase in phrases
+            ):
+
+                return element["id"]
+
+        return None
+
+    def save_debug_state(
+        self,
+        state: dict
+    ):
+
+        os.makedirs(
+            "results",
+            exist_ok=True
         )
 
-        if current == self.last_action:
-            self.same_action_count += 1
-            return True
+        with open(
+            "results/debug_state.json",
+            "w",
+            encoding="utf-8"
+        ) as file:
 
-        self.last_action = current
-        self.same_action_count = 1
-
-        return False
-
-    async def execute(
-        self,
-        action
-    ) -> bool:
-
-        if action.action == "fill":
-            if action.element_id is None:
-                raise ValueError(
-                    "fill requires element_id"
-                )
-
-            if action.value is None:
-                raise ValueError(
-                    "fill requires value"
-                )
-
-            await self.browser.fill(
-                action.element_id,
-                action.value
+            json.dump(
+                state,
+                file,
+                ensure_ascii=False,
+                indent=2,
+                default=str
             )
-
-            return False
-
-        if action.action == "click":
-            if action.element_id is None:
-                raise ValueError(
-                    "click requires element_id"
-                )
-
-            await self.browser.click(
-                action.element_id
-            )
-
-            await self.browser.wait(
-                700
-            )
-
-            return False
-
-        if action.action == "select":
-            if action.element_id is None:
-                raise ValueError(
-                    "select requires element_id"
-                )
-
-            await self.browser.select(
-                action.element_id,
-                action.value
-            )
-
-            await self.browser.wait(
-                200
-            )
-
-            return False
-
-        if action.action == "wait":
-            await self.browser.wait(
-                1000
-            )
-
-            return False
-
-        if action.action == "finish":
-            print(
-                "Agent finished."
-            )
-
-            return True
-
-        if action.action == "stop":
-            print(
-                "Agent stopped."
-            )
-
-            return True
 
         print(
-            "Unknown action."
+            "Debug state saved:"
+            " results/debug_state.json"
         )
 
-        return True
+    async def save_history(
+        self
+    ):
 
-    async def save_history(self):
         os.makedirs(
             "results",
             exist_ok=True
