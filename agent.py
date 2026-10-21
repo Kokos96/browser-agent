@@ -1,5 +1,7 @@
 import json
 import os
+import time
+from datetime import datetime, timezone
 
 from browser import BrowserController
 from config import settings
@@ -24,6 +26,17 @@ class BrowserAgent:
         }
 
         self.history = []
+        self.run_started_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        self.run_started_clock = time.monotonic()
+        self.run_record = {
+            "started_at": self.run_started_at,
+            "finished_at": None,
+            "duration_seconds": None,
+            "status": "running",
+            "score": None,
+            "url": settings.test_url,
+            "actions": [],
+        }
 
     async def run(self):
 
@@ -225,6 +238,8 @@ class BrowserAgent:
                 error
             )
 
+            self.run_record["status"] = "error"
+            self.run_record["error"] = str(error)
             self.history.append(
                 {
                     "error": str(error),
@@ -384,6 +399,7 @@ class BrowserAgent:
                 "No final submit button detected."
             )
 
+        self.run_record["status"] = "completed"
         await self.save_history()
 
     def is_loading(
@@ -717,35 +733,63 @@ class BrowserAgent:
             " results/debug_state.json"
         )
 
-    async def save_history(
-        self
-    ):
 
-        os.makedirs(
-            "results",
-            exist_ok=True
+    async def save_history(self):
+        """Save the run to local JSON and, when configured, Firestore."""
+        import tempfile
+
+        os.makedirs("results", exist_ok=True)
+        path = "results/agent_history.json"
+
+        self.run_record["actions"] = self.history
+        self.run_record["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        self.run_record["duration_seconds"] = round(
+            time.monotonic() - self.run_started_clock, 1
         )
 
-        path = (
-            "results/agent_history.json"
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                records = json.load(file)
+            if not isinstance(records, list):
+                records = []
+        except (FileNotFoundError, json.JSONDecodeError):
+            records = []
+
+        run_id = self.run_record.setdefault("run_id", self.run_started_at)
+        record = self.run_record.copy()
+        index = next(
+            (i for i, item in enumerate(records)
+             if isinstance(item, dict) and item.get("run_id") == run_id),
+            None,
         )
+        if index is None:
+            records.append(record)
+        else:
+            records[index] = record
 
-        with open(
-            path,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                self.history,
-                file,
-                ensure_ascii=False,
-                indent=2,
-                default=str
-            )
-
-        print()
-        print(
-            "History saved:",
-            path
+        fd, temp_path = tempfile.mkstemp(
+            dir="results", prefix="history_", suffix=".tmp"
         )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                json.dump(records, file, ensure_ascii=False, indent=2, default=str)
+            os.replace(temp_path, path)
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+        print("History saved:", path)
+
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+        if not project_id:
+            print("Firestore skipped: GOOGLE_CLOUD_PROJECT is not configured.")
+            return
+
+        try:
+            from google.cloud import firestore
+
+            db = firestore.Client(project=project_id)
+            db.collection("agent_history").document(str(run_id)).set(record)
+            print("History saved: Firestore")
+        except Exception as exc:
+            print(f"Firestore save failed; local history is preserved: {exc}")

@@ -1,4 +1,7 @@
-playwright
+playwright==1.63.0
 python-dotenv
 google-genai
 pydantic
+fastapi
+uvicorn[standard]
+google-cloud-firestore

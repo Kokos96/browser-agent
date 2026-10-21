@@ -1,0 +1,9 @@
+.venv
+.git
+__pycache__
+*.pyc
+.env
+*.backup
+*.before_run_history
+results
+node_modules

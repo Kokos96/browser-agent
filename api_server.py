@@ -170,3 +170,63 @@ async def get_status(
         "status": state,
         "logs": logs[-50:],
     }
+
+
+@app.get("/api/history")
+async def get_history(
+    x_api_token: str | None = Header(default=None),
+):
+    import json
+
+    authorize(x_api_token)
+
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+
+    if project_id:
+        try:
+            from google.cloud import firestore
+
+            db = firestore.Client(project=project_id)
+            docs = (
+                db.collection("agent_history")
+                .stream()
+            )
+            records = [doc.to_dict() for doc in docs]
+            records.sort(
+                key=lambda item: item.get("started_at", ""),
+                reverse=True,
+            )
+            return {"history": records}
+        except Exception as exc:
+            logs.append(f"Firestore history read failed: {exc}")
+            raise HTTPException(
+                status_code=503,
+                detail="Cloud history is temporarily unavailable",
+            ) from exc
+
+    history_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "results",
+        "agent_history.json",
+    )
+
+    try:
+        with open(history_path, "r", encoding="utf-8") as file:
+            records = json.load(file)
+    except FileNotFoundError:
+        records = []
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="History file contains invalid JSON",
+        ) from exc
+
+    if not isinstance(records, list):
+        records = []
+
+    records.sort(
+        key=lambda item: item.get("started_at", "")
+        if isinstance(item, dict) else "",
+        reverse=True,
+    )
+    return {"history": records}
