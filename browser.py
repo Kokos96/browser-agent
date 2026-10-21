@@ -1,6 +1,7 @@
 import os
 
 from playwright.async_api import Page
+from playwright.async_api import Error as PlaywrightError
 
 
 class BrowserController:
@@ -31,6 +32,24 @@ class BrowserController:
         )
 
     async def inspect(self):
+        # A navigation can destroy the DOM execution context.
+        # Retry briefly instead of crashing the whole agent.
+        last_error = None
+
+        for attempt in range(4):
+            try:
+                return await self._inspect_once()
+            except PlaywrightError as error:
+                last_error = error
+                if "Execution context was destroyed" not in str(error) and                    "most likely because of a navigation" not in str(error):
+                    raise
+                await self.page.wait_for_timeout(500)
+
+        raise RuntimeError(
+            f"Page kept navigating during inspection: {last_error}"
+        )
+
+    async def _inspect_once(self):
 
         locator = self.page.locator(
             self.SELECTOR
