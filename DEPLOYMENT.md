@@ -20,6 +20,7 @@ cd ~/browser-agent
 git status --short
 git fetch origin
 git switch feature/device-scoped-history 2>/dev/null || git switch -c feature/device-scoped-history --track origin/feature/device-scoped-history
+git pull --ff-only origin feature/device-scoped-history
 python -m py_compile api_server.py agent.py main.py
 python -m unittest discover -s tests -v
 ```
@@ -52,6 +53,7 @@ cd ~/browser-agent-web
 git status --short
 git fetch origin
 git switch feature/device-scoped-history 2>/dev/null || git switch -c feature/device-scoped-history --track origin/feature/device-scoped-history
+git pull --ff-only origin feature/device-scoped-history
 node --check script.js
 ```
 
