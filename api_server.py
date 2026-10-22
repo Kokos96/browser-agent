@@ -66,11 +66,20 @@ logs = []
 lock = asyncio.Lock()
 
 
+SUPPORTED_GEMINI_MODELS = {
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+}
+
+
 class RunRequest(BaseModel):
     url: HttpUrl
     first_name: str = ""
     last_name: str = ""
     group_name: str = ""
+    model: str | None = None
 
 def device_owner_id(token: str | None) -> str:
     """Return an opaque owner ID derived from a per-browser bearer secret."""
@@ -178,6 +187,8 @@ async def run_agent(
 
     authorize(x_api_token)
     device_id = device_owner_id(x_device_token)
+    if request.model is not None and request.model not in SUPPORTED_GEMINI_MODELS:
+        raise HTTPException(status_code=400, detail="Unsupported Gemini model")
 
     url = str(request.url)
     parsed = urlparse(url)
@@ -212,6 +223,8 @@ async def run_agent(
         env["USER_GROUP"] = request.group_name.strip()
         env["HEADLESS"] = "true"
         env["DEVICE_ID"] = device_id
+        if request.model:
+            env["GEMINI_MODEL"] = request.model
 
         try:
             process = await asyncio.create_subprocess_exec(
