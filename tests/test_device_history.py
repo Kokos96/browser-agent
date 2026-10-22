@@ -1,5 +1,7 @@
+import asyncio
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,6 +31,54 @@ class DeviceHistoryTests(unittest.TestCase):
             with self.subTest(token=token):
                 with self.assertRaises(HTTPException):
                     api_server.device_owner_id(token)
+
+    def test_history_endpoint_returns_only_the_calling_devices_records(self):
+        token_a = "a" * 64
+        token_b = "b" * 64
+        device_a = api_server.device_owner_id(token_a)
+        device_b = api_server.device_owner_id(token_b)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            results = root / "results"
+            results.mkdir()
+            history_file = results / "agent_history.json"
+            history_file.write_text(
+                json.dumps([
+                    {"device_id": device_a, "run_id": "a-run", "started_at": "2026-10-22T10:00:00"},
+                    {"device_id": device_b, "run_id": "b-run", "started_at": "2026-10-22T11:00:00"},
+                    {"run_id": "legacy-run", "started_at": "2026-10-22T12:00:00"},
+                ]),
+                encoding="utf-8",
+            )
+
+            async def read_history():
+                with (
+                    patch.object(api_server, "API_TOKEN", "test-api-token"),
+                    patch.object(api_server, "__file__", str(root / "api_server.py")),
+                    patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "", "GCP_PROJECT": ""}),
+                ):
+                    return await api_server.get_history("test-api-token", token_a)
+
+            result = asyncio.run(read_history())
+            self.assertEqual([record["run_id"] for record in result["history"]], ["a-run"])
+
+    def test_status_endpoint_hides_other_devices_logs(self):
+        token_a = "a" * 64
+        token_b = "b" * 64
+        device_a = api_server.device_owner_id(token_a)
+
+        async def read_status():
+            with (
+                patch.object(api_server, "API_TOKEN", "test-api-token"),
+                patch.object(api_server, "state_device_id", device_a),
+                patch.object(api_server, "state", "running"),
+                patch.object(api_server, "logs", ["private log"]),
+            ):
+                return await api_server.get_status("test-api-token", token_b)
+
+        result = asyncio.run(read_status())
+        self.assertEqual(result, {"status": "idle", "logs": []})
 
     def test_missing_history_file_is_treated_as_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
