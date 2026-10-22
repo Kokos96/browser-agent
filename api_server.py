@@ -80,6 +80,49 @@ def authorize(token: str | None):
         )
 
 
+def remove_local_history_records(device_id: str, run_id: str | None = None) -> int:
+    """Remove this device's backup records with an atomic file replacement."""
+    import json
+    import tempfile
+
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "results", "agent_history.json"
+    )
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            records = json.load(file)
+    except FileNotFoundError:
+        return 0
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="History file contains invalid JSON") from exc
+    if not isinstance(records, list):
+        return 0
+
+    kept = [
+        item for item in records
+        if not (
+            isinstance(item, dict)
+            and item.get("device_id") == device_id
+            and (run_id is None or str(item.get("run_id", "")) == run_id)
+        )
+    ]
+    deleted = len(records) - len(kept)
+    if not deleted:
+        return 0
+
+    fd, temp_path = tempfile.mkstemp(
+        dir=os.path.dirname(path), prefix="history_delete_", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump(kept, file, ensure_ascii=False, indent=2, default=str)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+    return deleted
+
+
 async def collect_output(proc, run_key: str):
     global state, logs
 
@@ -201,12 +244,12 @@ async def delete_history_item(
     x_api_token: str | None = Header(default=None),
     x_device_token: str | None = Header(default=None),
 ):
-    import json
-
     authorize(x_api_token)
     device_id = device_owner_id(x_device_token)
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    if process is not None and process.returncode is None and state_device_id == device_id:
+        raise HTTPException(status_code=409, detail="Cannot delete history while this device's agent is running")
 
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
     if project_id:
         try:
             from google.cloud import firestore
@@ -219,6 +262,7 @@ async def delete_history_item(
             if not ref.get().exists:
                 raise HTTPException(status_code=404, detail="Run not found")
             ref.delete()
+            remove_local_history_records(device_id, run_id)
             return {"deleted": 1}
         except HTTPException:
             raise
@@ -226,26 +270,9 @@ async def delete_history_item(
             logs.append(f"Firestore history delete failed: {exc}")
             raise HTTPException(status_code=503, detail="Cloud history delete failed") from exc
 
-    history_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "agent_history.json")
-    try:
-        with open(history_path, "r", encoding="utf-8") as file:
-            records = json.load(file)
-    except FileNotFoundError:
-        records = []
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="History file contains invalid JSON") from exc
-    if not isinstance(records, list):
-        records = []
-
-    kept = [item for item in records if not (
-        isinstance(item, dict) and item.get("device_id") == device_id
-        and str(item.get("run_id", "")) == run_id
-    )]
-    deleted = len(records) - len(kept)
+    deleted = remove_local_history_records(device_id, run_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Run not found")
-    with open(history_path, "w", encoding="utf-8") as file:
-        json.dump(kept, file, ensure_ascii=False, indent=2, default=str)
     return {"deleted": deleted}
 
 
@@ -254,46 +281,33 @@ async def delete_all_history(
     x_api_token: str | None = Header(default=None),
     x_device_token: str | None = Header(default=None),
 ):
-    import json
-
     authorize(x_api_token)
     device_id = device_owner_id(x_device_token)
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    if process is not None and process.returncode is None and state_device_id == device_id:
+        raise HTTPException(status_code=409, detail="Cannot clear history while this device's agent is running")
 
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
     if project_id:
         try:
             from google.cloud import firestore
 
             db = firestore.Client(project=project_id)
-            docs = list(db.collection("devices").document(device_id).collection("runs").stream())
+            docs = list(
+                db.collection("devices").document(device_id).collection("runs").stream()
+            )
             # Firestore batches support at most 500 writes.
             for start in range(0, len(docs), 450):
                 batch = db.batch()
                 for doc in docs[start:start + 450]:
                     batch.delete(doc.reference)
                 batch.commit()
+            remove_local_history_records(device_id)
             return {"deleted": len(docs)}
         except Exception as exc:
             logs.append(f"Firestore history clear failed: {exc}")
             raise HTTPException(status_code=503, detail="Cloud history clear failed") from exc
 
-    history_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "agent_history.json")
-    try:
-        with open(history_path, "r", encoding="utf-8") as file:
-            records = json.load(file)
-    except FileNotFoundError:
-        records = []
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="History file contains invalid JSON") from exc
-    if not isinstance(records, list):
-        records = []
-
-    kept = [item for item in records if not (
-        isinstance(item, dict) and item.get("device_id") == device_id
-    )]
-    deleted = len(records) - len(kept)
-    with open(history_path, "w", encoding="utf-8") as file:
-        json.dump(kept, file, ensure_ascii=False, indent=2, default=str)
+    deleted = remove_local_history_records(device_id)
     return {"deleted": deleted}
 
 
