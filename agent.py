@@ -364,6 +364,8 @@ class BrowserAgent:
             )
         )
 
+        submitted = False
+
         if submit_id is not None:
 
             print(
@@ -388,6 +390,7 @@ class BrowserAgent:
                 print(
                     "Browser: test submitted."
                 )
+                submitted = True
 
             else:
 
@@ -406,34 +409,34 @@ class BrowserAgent:
                 "No final submit button detected."
             )
 
-        # Capture the post-submit page when available; a capture failure must not
-        # invalidate an otherwise completed browser run.
-        try:
-            result_state = await self.browser.inspect()
-            result_text = str(result_state.get("text") or "")
-            result_page = {
-                "url": result_state.get("url") or "",
-                "title": result_state.get("title") or "",
-                "text_excerpt": result_text[:3000],
-            }
-            self.run_record["result_page"] = result_page
+        # Capture the result only after an actual automatic submission.
+        if submitted:
+            try:
+                result_state = await self.browser.inspect()
+                result_text = str(result_state.get("text") or "")
+                result_page = {
+                    "url": result_state.get("url") or "",
+                    "title": result_state.get("title") or "",
+                    "text_excerpt": result_text[:3000],
+                }
+                self.run_record["result_page"] = result_page
 
-            print("Result page URL:", result_page["url"])
-            print("Result page title:", result_page["title"])
-            print("Result page text:")
-            print(result_page["text_excerpt"])
+                print("Result page URL:", result_page["url"])
+                print("Result page title:", result_page["title"])
+                print("Result page text:")
+                print(result_page["text_excerpt"])
 
-            score_match = re.search(
-                r"Ваш результат:\s*(\d+)\s*/\s*(\d+)",
-                result_text,
-                flags=re.IGNORECASE,
-            )
-            if score_match:
-                score = f"{score_match.group(1)}/{score_match.group(2)}"
-                self.run_record["score"] = score
-                print("Ваш результат:", score)
-        except Exception as error:
-            print("Result page capture failed:", error)
+                score_match = re.search(
+                    r"Ваш результат:\s*(\d+)\s*/\s*(\d+)",
+                    result_text,
+                    flags=re.IGNORECASE,
+                )
+                if score_match:
+                    score = f"{score_match.group(1)}/{score_match.group(2)}"
+                    self.run_record["score"] = score
+                    print("Ваш результат:", score)
+            except Exception as error:
+                print("Result page capture failed:", error)
 
         self.run_record["status"] = "completed"
         await self.save_history()
