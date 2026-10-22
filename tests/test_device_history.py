@@ -22,8 +22,10 @@ class DeviceHistoryTests(unittest.TestCase):
         self.assertNotEqual(owner_id, api_server.device_owner_id("b" * 64))
 
     def test_model_allowlist_contains_default_and_current_flash_models(self):
-        self.assertIn("gemini-3.6-flash", api_server.SUPPORTED_GEMINI_MODELS)
+        self.assertIn("gemini-4-argon", api_server.SUPPORTED_GEMINI_MODELS)
         self.assertIn("gemini-3.8-flash", api_server.SUPPORTED_GEMINI_MODELS)
+        self.assertIn("gemini-3.6-flash", api_server.SUPPORTED_GEMINI_MODELS)
+        self.assertIn("gemini-3.5-flash-lite", api_server.SUPPORTED_GEMINI_MODELS)
         self.assertNotIn("untrusted-model-name", api_server.SUPPORTED_GEMINI_MODELS)
 
     def test_invalid_device_tokens_are_rejected(self):
