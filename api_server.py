@@ -303,6 +303,8 @@ async def delete_all_history(
                 batch.commit()
             remove_local_history_records(device_id)
             return {"deleted": len(docs)}
+        except HTTPException:
+            raise
         except Exception as exc:
             logs.append(f"Firestore history clear failed: {exc}")
             raise HTTPException(status_code=503, detail="Cloud history clear failed") from exc
