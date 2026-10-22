@@ -19,6 +19,7 @@ class BrowserAgent:
         self.browser = browser
         self.llm = llm
 
+        self.device_id = os.getenv("DEVICE_ID", "local")
         self.user_data = {
             "surname": settings.user_surname,
             "name": settings.user_name,
@@ -29,6 +30,7 @@ class BrowserAgent:
         self.run_started_at = datetime.now().astimezone().isoformat(timespec="seconds")
         self.run_started_clock = time.monotonic()
         self.run_record = {
+            "device_id": self.device_id,
             "started_at": self.run_started_at,
             "finished_at": None,
             "duration_seconds": None,
@@ -762,7 +764,9 @@ class BrowserAgent:
         record = self.run_record.copy()
         index = next(
             (i for i, item in enumerate(records)
-             if isinstance(item, dict) and item.get("run_id") == run_id),
+             if isinstance(item, dict)
+             and item.get("run_id") == run_id
+             and item.get("device_id", "local") == self.device_id),
             None,
         )
         if index is None:
@@ -792,7 +796,13 @@ class BrowserAgent:
             from google.cloud import firestore
 
             db = firestore.Client(project=project_id)
-            db.collection("agent_history").document(str(run_id)).set(record)
+            (
+                db.collection("devices")
+                .document(self.device_id)
+                .collection("runs")
+                .document(str(run_id))
+                .set(record)
+            )
             print("History saved: Firestore")
         except Exception as exc:
             print(f"Firestore save failed; local history is preserved: {exc}")
