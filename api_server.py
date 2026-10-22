@@ -49,7 +49,9 @@ lock = asyncio.Lock()
 
 class RunRequest(BaseModel):
     url: HttpUrl
-
+    first_name: str = ""
+    last_name: str = ""
+    group_name: str = ""
 
 def authorize(token: str | None):
     if not API_TOKEN:
@@ -132,6 +134,9 @@ async def run_agent(
         logs = []
         env = os.environ.copy()
         env["TEST_URL"] = url
+        env["USER_NAME"] = request.first_name.strip()
+        env["USER_SURNAME"] = request.last_name.strip()
+        env["USER_GROUP"] = request.group_name.strip()
         env["HEADLESS"] = "true"
 
         try:
