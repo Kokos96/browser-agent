@@ -25,6 +25,13 @@ class DeviceHistoryTests(unittest.TestCase):
                 with self.assertRaises(HTTPException):
                     api_server.device_owner_id(token)
 
+    def test_missing_history_file_is_treated_as_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "results").mkdir()
+            with patch.object(api_server, "__file__", str(root / "api_server.py")):
+                self.assertEqual(api_server.remove_local_history_records("device-a"), 0)
+
     def test_deletion_only_removes_matching_device_and_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
