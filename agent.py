@@ -32,6 +32,7 @@ class BrowserAgent:
         self.run_started_clock = time.monotonic()
         self.run_record = {
             "device_id": self.device_id,
+            "run_id": os.getenv("RUN_ID") or self.run_started_at,
             "model": settings.gemini_model,
             "model_provider": "Google Gemini",
             "started_at": self.run_started_at,
