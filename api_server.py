@@ -1,5 +1,6 @@
 
 import asyncio
+from datetime import datetime, timezone
 import hashlib
 import hmac
 import os
@@ -145,8 +146,99 @@ def remove_local_history_records(device_id: str, run_id: str | None = None) -> i
     return deleted
 
 
-async def collect_output(proc, run_key: str):
+def persist_run_logs(device_id: str, run_id: str, captured_logs: list[dict]):
+    """Attach subprocess stdout to the matching device-scoped history record."""
+    import json
+    import tempfile
+
+    saved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    local_error = None
+    history_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "results",
+        "agent_history.json",
+    )
+    os.makedirs(os.path.dirname(history_path), exist_ok=True)
+
+    try:
+        try:
+            with open(history_path, "r", encoding="utf-8") as file:
+                records = json.load(file)
+            if not isinstance(records, list):
+                records = []
+        except (FileNotFoundError, json.JSONDecodeError):
+            records = []
+
+        record = next(
+            (
+                item for item in records
+                if isinstance(item, dict)
+                and item.get("device_id") == device_id
+                and item.get("run_id") == run_id
+            ),
+            None,
+        )
+        if record is None:
+            record = {
+                "device_id": device_id,
+                "run_id": run_id,
+                "status": "completed",
+                "started_at": saved_at,
+            }
+            records.append(record)
+
+        record["logs"] = captured_logs[-1000:]
+        record["log_count"] = len(captured_logs)
+        record["logs_saved_at"] = saved_at
+
+        fd, temp_path = tempfile.mkstemp(
+            dir=os.path.dirname(history_path), prefix="history_logs_", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                json.dump(records, file, ensure_ascii=False, indent=2, default=str)
+            os.replace(temp_path, history_path)
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as exc:
+        local_error = exc
+
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    cloud_error = None
+    if project_id:
+        try:
+            from google.cloud import firestore
+
+            ref = (
+                firestore.Client(project=project_id)
+                .collection("devices")
+                .document(device_id)
+                .collection("runs")
+                .document(str(run_id))
+            )
+            ref.set(
+                {
+                    "device_id": device_id,
+                    "run_id": run_id,
+                    "logs": captured_logs[-1000:],
+                    "log_count": len(captured_logs),
+                    "logs_saved_at": saved_at,
+                },
+                merge=True,
+            )
+        except Exception as exc:
+            cloud_error = exc
+
+    if local_error:
+        print(f"Local log history save failed: {local_error}")
+    if cloud_error:
+        print(f"Firestore log history save failed: {cloud_error}")
+
+
+async def collect_output(proc, run_key: str, device_id: str, run_id: str):
     global state, logs
+    captured_logs = []
 
     try:
         while True:
@@ -155,20 +247,42 @@ async def collect_output(proc, run_key: str):
             if not line:
                 break
 
+            message = line.decode("utf-8", errors="replace").rstrip("\r\n")
+            captured_logs.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "message": message,
+            })
+
             # A previous reader must never append logs to a newer run.
             if state_run_key == run_key:
-                logs.append(line.decode("utf-8", errors="replace").rstrip())
+                logs.append(message)
                 del logs[:-150]
 
         code = await proc.wait()
+        exit_message = f"Process exited with code {code}"
+        captured_logs.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "message": exit_message,
+        })
         if state_run_key == run_key:
             state = "completed" if code == 0 else "error"
-            logs.append(f"Process exited with code {code}")
+            logs.append(exit_message)
+
+        await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs)
 
     except Exception as exc:
+        error_message = f"Output reader error: {exc}"
+        captured_logs.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "message": error_message,
+        })
         if state_run_key == run_key:
             state = "error"
-            logs.append(f"Output reader error: {exc}")
+            logs.append(error_message)
+        try:
+            await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs)
+        except Exception:
+            pass
 
 
 @app.get("/api/health")
@@ -223,6 +337,7 @@ async def run_agent(
         env["USER_GROUP"] = request.group_name.strip()
         env["HEADLESS"] = "true"
         env["DEVICE_ID"] = device_id
+        env["RUN_ID"] = run_key
         if request.model:
             env["GEMINI_MODEL"] = request.model
 
@@ -244,10 +359,11 @@ async def run_agent(
             ) from exc
 
         state = "running"
-        asyncio.create_task(collect_output(process, run_key))
+        asyncio.create_task(collect_output(process, run_key, device_id, run_key))
 
     return {
         "status": "running",
+        "run_id": run_key,
         "message": "Agent started",
     }
 
