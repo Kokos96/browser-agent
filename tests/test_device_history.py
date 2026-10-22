@@ -82,6 +82,35 @@ class DeviceHistoryTests(unittest.TestCase):
         result = asyncio.run(read_status())
         self.assertEqual(result, {"status": "idle", "logs": []})
 
+    def test_persist_run_logs_attaches_stdout_only_to_matching_device_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            results = root / "results"
+            results.mkdir()
+            history_file = results / "agent_history.json"
+            history_file.write_text(
+                json.dumps([
+                    {"device_id": "device-a", "run_id": "run-1", "status": "completed"},
+                    {"device_id": "device-b", "run_id": "run-1", "status": "completed"},
+                ]),
+                encoding="utf-8",
+            )
+            captured = [
+                {"timestamp": "2026-10-22T20:00:00+00:00", "message": "Agent started"},
+                {"timestamp": "2026-10-22T20:00:01+00:00", "message": "Process exited with code 0"},
+            ]
+
+            with (
+                patch.object(api_server, "__file__", str(root / "api_server.py")),
+                patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "", "GCP_PROJECT": ""}),
+            ):
+                api_server.persist_run_logs("device-a", "run-1", captured)
+
+            records = json.loads(history_file.read_text(encoding="utf-8"))
+            self.assertEqual(records[0]["logs"], captured)
+            self.assertEqual(records[0]["log_count"], 2)
+            self.assertNotIn("logs", records[1])
+
     def test_missing_history_file_is_treated_as_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
