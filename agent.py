@@ -33,6 +33,7 @@ class BrowserAgent:
         self.run_record = {
             "device_id": self.device_id,
             "model": settings.gemini_model,
+            "model_provider": "Google Gemini",
             "started_at": self.run_started_at,
             "finished_at": None,
             "duration_seconds": None,
