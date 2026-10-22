@@ -238,7 +238,7 @@ class BrowserAgent:
                 self.llm, "last_usage", {}
             )
 
-        except RuntimeError as error:
+        except Exception as error:
 
             print()
             print(
