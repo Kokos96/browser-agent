@@ -5,6 +5,7 @@ import hmac
 import os
 import re
 import sys
+import uuid
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -47,6 +48,7 @@ app.add_middleware(
 process = None
 state = "idle"
 state_device_id = None
+state_run_key = None
 logs = []
 lock = asyncio.Lock()
 
@@ -78,8 +80,8 @@ def authorize(token: str | None):
         )
 
 
-async def collect_output(proc):
-    global state
+async def collect_output(proc, run_key: str):
+    global state, logs
 
     try:
         while True:
@@ -88,18 +90,20 @@ async def collect_output(proc):
             if not line:
                 break
 
-            logs.append(
-                line.decode("utf-8", errors="replace").rstrip()
-            )
-            del logs[:-150]
+            # A previous reader must never append logs to a newer run.
+            if state_run_key == run_key:
+                logs.append(line.decode("utf-8", errors="replace").rstrip())
+                del logs[:-150]
 
         code = await proc.wait()
-        state = "completed" if code == 0 else "error"
-        logs.append(f"Process exited with code {code}")
+        if state_run_key == run_key:
+            state = "completed" if code == 0 else "error"
+            logs.append(f"Process exited with code {code}")
 
     except Exception as exc:
-        state = "error"
-        logs.append(f"Output reader error: {exc}")
+        if state_run_key == run_key:
+            state = "error"
+            logs.append(f"Output reader error: {exc}")
 
 
 @app.get("/api/health")
@@ -114,7 +118,7 @@ async def run_agent(
     x_api_token: str | None = Header(default=None),
     x_device_token: str | None = Header(default=None),
 ):
-    global process, state, state_device_id, logs
+    global process, state, state_device_id, state_run_key, logs
 
     authorize(x_api_token)
     device_id = device_owner_id(x_device_token)
@@ -142,6 +146,9 @@ async def run_agent(
             )
 
         logs = []
+        state_device_id = device_id
+        run_key = uuid.uuid4().hex
+        state_run_key = run_key
         env = os.environ.copy()
         env["TEST_URL"] = url
         env["USER_NAME"] = request.first_name.strip()
@@ -168,8 +175,7 @@ async def run_agent(
             ) from exc
 
         state = "running"
-        state_device_id = device_id
-        asyncio.create_task(collect_output(process))
+        asyncio.create_task(collect_output(process, run_key))
 
     return {
         "status": "running",
