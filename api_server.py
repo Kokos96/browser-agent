@@ -16,10 +16,23 @@ from pydantic import BaseModel, HttpUrl
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN", "")
-FRONTEND_ORIGIN = os.getenv(
-    "FRONTEND_ORIGIN",
-    "https://browser-agent-fl9il7rn0-kokos96.vercel.app",
+DEFAULT_FRONTEND_ORIGINS = (
+    "https://browser-agent-fl9il7rn0-kokos96.vercel.app,"
+    "https://browser-agent-web-nine.vercel.app"
 )
+FRONTEND_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS",
+        os.getenv("FRONTEND_ORIGIN", DEFAULT_FRONTEND_ORIGINS),
+    ).split(",")
+    if origin.strip()
+]
+# Keep the current known Vercel deployment reachable even when the legacy
+# singular environment variable is still configured in Cloud Run.
+CURRENT_FRONTEND_ORIGIN = "https://browser-agent-web-nine.vercel.app"
+if CURRENT_FRONTEND_ORIGIN not in FRONTEND_ORIGINS:
+    FRONTEND_ORIGINS.append(CURRENT_FRONTEND_ORIGIN)
 
 ALLOWED_HOSTS = {
     host.strip().lower()
@@ -34,7 +47,7 @@ app = FastAPI(title="Browser Agent API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN],
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=[
