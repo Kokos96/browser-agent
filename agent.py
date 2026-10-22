@@ -229,6 +229,9 @@ class BrowserAgent:
                 state,
                 self.user_data
             )
+            self.run_record["gemini_usage"] = getattr(
+                self.llm, "last_usage", {}
+            )
 
         except RuntimeError as error:
 

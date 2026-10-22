@@ -121,31 +121,21 @@ class GeminiClient:
         print("GEMINI TOKEN USAGE")
         print("-" * 60)
 
+        self.last_usage = {}
+
         if usage:
 
-            input_tokens = getattr(
-                usage,
-                "prompt_token_count",
-                0
-            )
+            input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+            output_tokens = getattr(usage, "candidates_token_count", 0) or 0
+            thinking_tokens = getattr(usage, "thoughts_token_count", 0) or 0
+            total_tokens = getattr(usage, "total_token_count", 0) or 0
 
-            output_tokens = getattr(
-                usage,
-                "candidates_token_count",
-                0
-            )
-
-            thinking_tokens = getattr(
-                usage,
-                "thoughts_token_count",
-                0
-            )
-
-            total_tokens = getattr(
-                usage,
-                "total_token_count",
-                0
-            )
+            self.last_usage = {
+                "input_tokens": int(input_tokens),
+                "output_tokens": int(output_tokens),
+                "thinking_tokens": int(thinking_tokens),
+                "total_tokens": int(total_tokens),
+            }
 
             print(
                 f"Input tokens:    {input_tokens}"
