@@ -1,8 +1,12 @@
 
 import asyncio
+from datetime import datetime, timezone
+import hashlib
 import hmac
 import os
+import re
 import sys
+import uuid
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -13,10 +17,23 @@ from pydantic import BaseModel, HttpUrl
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN", "")
-FRONTEND_ORIGIN = os.getenv(
-    "FRONTEND_ORIGIN",
-    "https://browser-agent-fl9il7rn0-kokos96.vercel.app",
+DEFAULT_FRONTEND_ORIGINS = (
+    "https://browser-agent-fl9il7rn0-kokos96.vercel.app,"
+    "https://browser-agent-web-nine.vercel.app"
 )
+FRONTEND_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS",
+        os.getenv("FRONTEND_ORIGIN", DEFAULT_FRONTEND_ORIGINS),
+    ).split(",")
+    if origin.strip()
+]
+# Keep the current known Vercel deployment reachable even when the legacy
+# singular environment variable is still configured in Cloud Run.
+CURRENT_FRONTEND_ORIGIN = "https://browser-agent-web-nine.vercel.app"
+if CURRENT_FRONTEND_ORIGIN not in FRONTEND_ORIGINS:
+    FRONTEND_ORIGINS.append(CURRENT_FRONTEND_ORIGIN)
 
 ALLOWED_HOSTS = {
     host.strip().lower()
@@ -31,20 +48,31 @@ app = FastAPI(title="Browser Agent API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN],
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=[
         "Content-Type",
         "X-API-Token",
+        "X-Device-Token",
         "ngrok-skip-browser-warning",
     ],
 )
 
 process = None
 state = "idle"
+state_device_id = None
+state_run_key = None
 logs = []
 lock = asyncio.Lock()
+
+
+SUPPORTED_GEMINI_MODELS = {
+    "gemini-4-argon",
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+}
 
 
 class RunRequest(BaseModel):
@@ -52,6 +80,14 @@ class RunRequest(BaseModel):
     first_name: str = ""
     last_name: str = ""
     group_name: str = ""
+    model: str | None = None
+
+def device_owner_id(token: str | None) -> str:
+    """Return an opaque owner ID derived from a per-browser bearer secret."""
+    if not token or not re.fullmatch(r"[0-9a-f]{64}", token):
+        raise HTTPException(status_code=400, detail="Invalid or missing device token")
+    return hashlib.sha256(token.encode("ascii")).hexdigest()
+
 
 def authorize(token: str | None):
     if not API_TOKEN:
@@ -67,8 +103,142 @@ def authorize(token: str | None):
         )
 
 
-async def collect_output(proc):
-    global state
+def remove_local_history_records(device_id: str, run_id: str | None = None) -> int:
+    """Remove this device's backup records with an atomic file replacement."""
+    import json
+    import tempfile
+
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "results", "agent_history.json"
+    )
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            records = json.load(file)
+    except FileNotFoundError:
+        return 0
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="History file contains invalid JSON") from exc
+    if not isinstance(records, list):
+        return 0
+
+    kept = [
+        item for item in records
+        if not (
+            isinstance(item, dict)
+            and item.get("device_id") == device_id
+            and (run_id is None or str(item.get("run_id", "")) == run_id)
+        )
+    ]
+    deleted = len(records) - len(kept)
+    if not deleted:
+        return 0
+
+    fd, temp_path = tempfile.mkstemp(
+        dir=os.path.dirname(path), prefix="history_delete_", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump(kept, file, ensure_ascii=False, indent=2, default=str)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+    return deleted
+
+
+def persist_run_logs(device_id: str, run_id: str, captured_logs: list[dict]):
+    """Attach subprocess stdout to the matching device-scoped history record."""
+    import json
+    import tempfile
+
+    saved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    local_error = None
+    history_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "results",
+        "agent_history.json",
+    )
+    os.makedirs(os.path.dirname(history_path), exist_ok=True)
+
+    try:
+        try:
+            with open(history_path, "r", encoding="utf-8") as file:
+                records = json.load(file)
+            if not isinstance(records, list):
+                records = []
+        except (FileNotFoundError, json.JSONDecodeError):
+            records = []
+
+        record = next(
+            (
+                item for item in records
+                if isinstance(item, dict)
+                and item.get("device_id") == device_id
+                and item.get("run_id") == run_id
+            ),
+            None,
+        )
+        if record is None:
+            record = {
+                "device_id": device_id,
+                "run_id": run_id,
+                "status": "completed",
+                "started_at": saved_at,
+            }
+            records.append(record)
+
+        record["logs"] = captured_logs[-1000:]
+        record["log_count"] = len(captured_logs)
+        record["logs_saved_at"] = saved_at
+
+        fd, temp_path = tempfile.mkstemp(
+            dir=os.path.dirname(history_path), prefix="history_logs_", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                json.dump(records, file, ensure_ascii=False, indent=2, default=str)
+            os.replace(temp_path, history_path)
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as exc:
+        local_error = exc
+
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    cloud_error = None
+    if project_id:
+        try:
+            from google.cloud import firestore
+
+            ref = (
+                firestore.Client(project=project_id)
+                .collection("devices")
+                .document(device_id)
+                .collection("runs")
+                .document(str(run_id))
+            )
+            ref.set(
+                {
+                    "device_id": device_id,
+                    "run_id": run_id,
+                    "logs": captured_logs[-1000:],
+                    "log_count": len(captured_logs),
+                    "logs_saved_at": saved_at,
+                },
+                merge=True,
+            )
+        except Exception as exc:
+            cloud_error = exc
+
+    if local_error:
+        print(f"Local log history save failed: {local_error}")
+    if cloud_error:
+        print(f"Firestore log history save failed: {cloud_error}")
+
+
+async def collect_output(proc, run_key: str, device_id: str, run_id: str):
+    global state, logs
+    captured_logs = []
 
     try:
         while True:
@@ -77,37 +247,62 @@ async def collect_output(proc):
             if not line:
                 break
 
-            logs.append(
-                line.decode("utf-8", errors="replace").rstrip()
-            )
-            del logs[:-150]
+            message = line.decode("utf-8", errors="replace").rstrip("\r\n")
+            captured_logs.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "message": message,
+            })
+
+            # A previous reader must never append logs to a newer run.
+            if state_run_key == run_key:
+                logs.append(message)
+                del logs[:-150]
 
         code = await proc.wait()
-        state = "completed" if code == 0 else "error"
-        logs.append(f"Process exited with code {code}")
+        exit_message = f"Process exited with code {code}"
+        captured_logs.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "message": exit_message,
+        })
+        if state_run_key == run_key:
+            state = "completed" if code == 0 else "error"
+            logs.append(exit_message)
+
+        await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs)
 
     except Exception as exc:
-        state = "error"
-        logs.append(f"Output reader error: {exc}")
+        error_message = f"Output reader error: {exc}"
+        captured_logs.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "message": error_message,
+        })
+        if state_run_key == run_key:
+            state = "error"
+            logs.append(error_message)
+        try:
+            await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs)
+        except Exception:
+            pass
 
 
 @app.get("/api/health")
 async def health():
-    return {
-        "ok": True,
-        "service": "browser-agent-api",
-        "status": state,
-    }
+    # Public health does not disclose any device's active run status.
+    return {"ok": True, "service": "browser-agent-api"}
 
 
 @app.post("/api/run")
 async def run_agent(
     request: RunRequest,
     x_api_token: str | None = Header(default=None),
+    x_device_token: str | None = Header(default=None),
 ):
-    global process, state, logs
+    global process, state, state_device_id, state_run_key, logs
 
     authorize(x_api_token)
+    device_id = device_owner_id(x_device_token)
+    if request.model is not None and request.model not in SUPPORTED_GEMINI_MODELS:
+        raise HTTPException(status_code=400, detail="Unsupported Gemini model")
 
     url = str(request.url)
     parsed = urlparse(url)
@@ -132,12 +327,19 @@ async def run_agent(
             )
 
         logs = []
+        state_device_id = device_id
+        run_key = uuid.uuid4().hex
+        state_run_key = run_key
         env = os.environ.copy()
         env["TEST_URL"] = url
         env["USER_NAME"] = request.first_name.strip()
         env["USER_SURNAME"] = request.last_name.strip()
         env["USER_GROUP"] = request.group_name.strip()
         env["HEADLESS"] = "true"
+        env["DEVICE_ID"] = device_id
+        env["RUN_ID"] = run_key
+        if request.model:
+            env["GEMINI_MODEL"] = request.model
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -157,10 +359,11 @@ async def run_agent(
             ) from exc
 
         state = "running"
-        asyncio.create_task(collect_output(process))
+        asyncio.create_task(collect_output(process, run_key, device_id, run_key))
 
     return {
         "status": "running",
+        "run_id": run_key,
         "message": "Agent started",
     }
 
@@ -168,22 +371,99 @@ async def run_agent(
 @app.get("/api/status")
 async def get_status(
     x_api_token: str | None = Header(default=None),
+    x_device_token: str | None = Header(default=None),
 ):
     authorize(x_api_token)
+    device_id = device_owner_id(x_device_token)
+    if state_device_id != device_id:
+        return {"status": "idle", "logs": []}
+    return {"status": state, "logs": logs[-50:]}
 
-    return {
-        "status": state,
-        "logs": logs[-50:],
-    }
+
+@app.delete("/api/history/{run_id}")
+async def delete_history_item(
+    run_id: str,
+    x_api_token: str | None = Header(default=None),
+    x_device_token: str | None = Header(default=None),
+):
+    authorize(x_api_token)
+    device_id = device_owner_id(x_device_token)
+    if process is not None and process.returncode is None and state_device_id == device_id:
+        raise HTTPException(status_code=409, detail="Cannot delete history while this device's agent is running")
+
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    if project_id:
+        try:
+            from google.cloud import firestore
+
+            ref = (
+                firestore.Client(project=project_id)
+                .collection("devices").document(device_id)
+                .collection("runs").document(run_id)
+            )
+            if not ref.get().exists:
+                raise HTTPException(status_code=404, detail="Run not found")
+            ref.delete()
+            remove_local_history_records(device_id, run_id)
+            return {"deleted": 1}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logs.append(f"Firestore history delete failed: {exc}")
+            raise HTTPException(status_code=503, detail="Cloud history delete failed") from exc
+
+    deleted = remove_local_history_records(device_id, run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {"deleted": deleted}
+
+
+@app.delete("/api/history")
+async def delete_all_history(
+    x_api_token: str | None = Header(default=None),
+    x_device_token: str | None = Header(default=None),
+):
+    authorize(x_api_token)
+    device_id = device_owner_id(x_device_token)
+    if process is not None and process.returncode is None and state_device_id == device_id:
+        raise HTTPException(status_code=409, detail="Cannot clear history while this device's agent is running")
+
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    if project_id:
+        try:
+            from google.cloud import firestore
+
+            db = firestore.Client(project=project_id)
+            docs = list(
+                db.collection("devices").document(device_id).collection("runs").stream()
+            )
+            # Firestore batches support at most 500 writes.
+            for start in range(0, len(docs), 450):
+                batch = db.batch()
+                for doc in docs[start:start + 450]:
+                    batch.delete(doc.reference)
+                batch.commit()
+            remove_local_history_records(device_id)
+            return {"deleted": len(docs)}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logs.append(f"Firestore history clear failed: {exc}")
+            raise HTTPException(status_code=503, detail="Cloud history clear failed") from exc
+
+    deleted = remove_local_history_records(device_id)
+    return {"deleted": deleted}
 
 
 @app.get("/api/history")
 async def get_history(
     x_api_token: str | None = Header(default=None),
+    x_device_token: str | None = Header(default=None),
 ):
     import json
 
     authorize(x_api_token)
+    device_id = device_owner_id(x_device_token)
 
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
 
@@ -193,7 +473,9 @@ async def get_history(
 
             db = firestore.Client(project=project_id)
             docs = (
-                db.collection("agent_history")
+                db.collection("devices")
+                .document(device_id)
+                .collection("runs")
                 .stream()
             )
             records = [doc.to_dict() for doc in docs]
@@ -228,6 +510,12 @@ async def get_history(
 
     if not isinstance(records, list):
         records = []
+
+    # Legacy records without an owner stay hidden from all devices.
+    records = [
+        item for item in records
+        if isinstance(item, dict) and item.get("device_id") == device_id
+    ]
 
     records.sort(
         key=lambda item: item.get("started_at", "")
