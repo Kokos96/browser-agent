@@ -53,7 +53,7 @@ flowchart LR
 │       └── prompts.py         # Системний prompt та форматування запиту
 ├── tests/
 │   ├── test_device_history.py # Ізоляція історії та збереження логів
-│   └── test_run_status.py    # Відповідність exit code результату агента
+│   └── test_run_status.py     # Відповідність exit code результату агента
 ├── docs/
 │   └── architecture.md        # Компоненти, схема та обмеження
 ├── .github/workflows/
@@ -76,7 +76,7 @@ git clone https://github.com/Kokos96/browser-agent.git
 cd browser-agent
 
 python -m venv .venv
-source .venv/bin/activate       # Windows PowerShell: .venv\\Scripts\\Activate.ps1
+source .venv/bin/activate       # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m playwright install chromium
 
