@@ -146,8 +146,13 @@ def remove_local_history_records(device_id: str, run_id: str | None = None) -> i
     return deleted
 
 
-def persist_run_logs(device_id: str, run_id: str, captured_logs: list[dict]):
-    """Attach subprocess stdout to the matching device-scoped history record."""
+def persist_run_logs(
+    device_id: str,
+    run_id: str,
+    captured_logs: list[dict],
+    exit_code: int | None = None,
+):
+    """Persist subprocess output and synchronize the process status for one run."""
     import json
     import tempfile
 
@@ -159,6 +164,12 @@ def persist_run_logs(device_id: str, run_id: str, captured_logs: list[dict]):
         "agent_history.json",
     )
     os.makedirs(os.path.dirname(history_path), exist_ok=True)
+
+    process_status = (
+        "unknown"
+        if exit_code is None
+        else "completed" if exit_code == 0 else "error"
+    )
 
     try:
         try:
@@ -182,10 +193,17 @@ def persist_run_logs(device_id: str, run_id: str, captured_logs: list[dict]):
             record = {
                 "device_id": device_id,
                 "run_id": run_id,
-                "status": "completed",
-                "started_at": saved_at,
+                "status": process_status,
+                "test_outcome": "unknown",
             }
             records.append(record)
+
+        if exit_code is not None:
+            record["process_exit_code"] = exit_code
+            record["process_status"] = process_status
+            record["process_finished_at"] = saved_at
+            # Keep the user-visible process status consistent with the exit code.
+            record["status"] = process_status
 
         record["logs"] = captured_logs[-1000:]
         record["log_count"] = len(captured_logs)
@@ -210,6 +228,21 @@ def persist_run_logs(device_id: str, run_id: str, captured_logs: list[dict]):
         try:
             from google.cloud import firestore
 
+            payload = {
+                "device_id": device_id,
+                "run_id": run_id,
+                "logs": captured_logs[-1000:],
+                "log_count": len(captured_logs),
+                "logs_saved_at": saved_at,
+            }
+            if exit_code is not None:
+                payload.update({
+                    "process_exit_code": exit_code,
+                    "process_status": process_status,
+                    "process_finished_at": saved_at,
+                    "status": process_status,
+                })
+
             ref = (
                 firestore.Client(project=project_id)
                 .collection("devices")
@@ -217,16 +250,7 @@ def persist_run_logs(device_id: str, run_id: str, captured_logs: list[dict]):
                 .collection("runs")
                 .document(str(run_id))
             )
-            ref.set(
-                {
-                    "device_id": device_id,
-                    "run_id": run_id,
-                    "logs": captured_logs[-1000:],
-                    "log_count": len(captured_logs),
-                    "logs_saved_at": saved_at,
-                },
-                merge=True,
-            )
+            ref.set(payload, merge=True)
         except Exception as exc:
             cloud_error = exc
 
@@ -268,7 +292,7 @@ async def collect_output(proc, run_key: str, device_id: str, run_id: str):
             state = "completed" if code == 0 else "error"
             logs.append(exit_message)
 
-        await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs)
+        await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs, code)
 
     except Exception as exc:
         error_message = f"Output reader error: {exc}"
@@ -280,7 +304,7 @@ async def collect_output(proc, run_key: str, device_id: str, run_id: str):
             state = "error"
             logs.append(error_message)
         try:
-            await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs)
+            await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs, proc.returncode)
         except Exception:
             pass
 
