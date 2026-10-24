@@ -45,7 +45,7 @@ class BrowserAgent:
             "actions": [],
         }
 
-    async def run(self):
+    async def run(self) -> bool:
 
         print("Agent started")
 
