@@ -157,5 +157,80 @@ class DeviceHistoryTests(unittest.TestCase):
                 )
 
 
+    def test_nonzero_process_exit_marks_run_as_error_and_keeps_test_outcome(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            results = root / "results"
+            results.mkdir()
+            history_file = results / "agent_history.json"
+            history_file.write_text(
+                json.dumps([
+                    {
+                        "device_id": "device-a",
+                        "run_id": "run-failed",
+                        "status": "running",
+                        "test_outcome": "test_content_not_loaded",
+                        "diagnostics": {"interactive_elements": 0},
+                    }
+                ]),
+                encoding="utf-8",
+            )
+
+            captured = [
+                {
+                    "timestamp": "2026-10-24T09:00:00+00:00",
+                    "message": "ERROR: test content did not load.",
+                }
+            ]
+
+            with (
+                patch.object(api_server, "__file__", str(root / "api_server.py")),
+                patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "", "GCP_PROJECT": ""}),
+            ):
+                api_server.persist_run_logs(
+                    "device-a", "run-failed", captured, exit_code=1
+                )
+
+            records = json.loads(history_file.read_text(encoding="utf-8"))
+            self.assertEqual(records[0]["status"], "error")
+            self.assertEqual(records[0]["process_status"], "error")
+            self.assertEqual(records[0]["process_exit_code"], 1)
+            self.assertEqual(records[0]["test_outcome"], "test_content_not_loaded")
+            self.assertEqual(records[0]["diagnostics"]["interactive_elements"], 0)
+            self.assertEqual(records[0]["logs"], captured)
+
+    def test_successful_process_exit_does_not_invent_test_score(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            results = root / "results"
+            results.mkdir()
+            history_file = results / "agent_history.json"
+            history_file.write_text(
+                json.dumps([
+                    {
+                        "device_id": "device-a",
+                        "run_id": "run-no-score",
+                        "status": "completed",
+                        "test_outcome": "result_page_captured",
+                        "score": None,
+                    }
+                ]),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(api_server, "__file__", str(root / "api_server.py")),
+                patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "", "GCP_PROJECT": ""}),
+            ):
+                api_server.persist_run_logs(
+                    "device-a", "run-no-score", [], exit_code=0
+                )
+
+            records = json.loads(history_file.read_text(encoding="utf-8"))
+            self.assertEqual(records[0]["status"], "completed")
+            self.assertEqual(records[0]["test_outcome"], "result_page_captured")
+            self.assertIsNone(records[0]["score"])
+
+
 if __name__ == "__main__":
     unittest.main()
