@@ -3,6 +3,11 @@
 !.env.example
 .venv/
 __pycache__/
+*.py[cod]
 results/
+screenshots/
 *.backup
 *.before_*
+.pytest_cache/
+.ruff_cache/
+node_modules/

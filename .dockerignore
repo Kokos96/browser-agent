@@ -4,6 +4,9 @@ __pycache__
 *.pyc
 .env
 *.backup
-*.before_run_history
+*.before_*
 results
+screenshots
 node_modules
+.pytest_cache
+.ruff_cache

@@ -3,9 +3,9 @@ import os
 from google import genai
 from google.genai import types
 
-from config import settings
-from models import BatchPlan
-from prompts import SYSTEM_PROMPT, build_batch_prompt
+from .config import settings
+from .models import BatchPlan
+from .prompts import SYSTEM_PROMPT, build_batch_prompt
 
 
 class GeminiClient:

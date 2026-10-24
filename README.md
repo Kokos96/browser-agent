@@ -1,159 +1,165 @@
-# browser-agent
+# Browser Automation Agent
 
-`browser-agent` is an asynchronous Python browser automation agent that uses Playwright for web interaction and Google Gemini for next-action decisions.
+[![CI](https://github.com/Kokos96/browser-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/Kokos96/browser-agent/actions/workflows/validate.yml)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Playwright](https://img.shields.io/badge/Browser-Playwright-2EAD33)
 
-It is designed for guided form/test workflows: it opens a target page, inspects interactive elements, optionally captures screenshots, asks Gemini for one structured action at a time, executes that action, and stores execution history.
+**Browser Automation Agent** — асинхронний Python-агент для автоматизації браузерних сценаріїв. Він використовує Playwright для взаємодії зі сторінкою, Gemini для побудови структурованого плану дій і FastAPI для віддаленого запуску та перегляду стану.
 
-## What it does
+Проєкт розгортається як два компоненти: вебклієнт у окремому репозиторії та API/worker у цьому репозиторії.
 
-Based on the current source code, the agent can:
+**Демо інтерфейсу:** [відкрити Browser Agent](https://browser-agent-web-nine.vercel.app)
 
-- Launch Chromium with Playwright (`main.py`)
-- Open a configured URL and inspect page state (`browser.py`)
-- Extract interactive elements (`input`, `button`, `textarea`, `select`, `a`, `img`, and selected ARIA-role controls)
-- Auto-fill initial user fields when present (`surname`, `name`, `grp`) and click a start button before using AI (`agent.py`)
-- Request exactly one structured action from Gemini (`llm.py`, `prompts.py`)
-- Execute supported actions and stop on completion or safety conditions (`agent.py`)
-- Optionally attach screenshot bytes to Gemini requests when vision is enabled (`llm.py`)
-- Save run history to `results/agent_history.json` (`agent.py`)
+> **Стан проєкту:** MVP у розробці. Базовий сценарій запуску та збереження історії реалізований; стабільність наскрізного виконання і повнота діагностики ще перевіряються. Статус завершення процесу не є доказом успішного результату цільового тесту.
 
-## Supported action types
+## Можливості
 
-The action schema in `models.py` defines these action types:
+- Керування браузером через Playwright і Chromium.
+- Інспекція URL, заголовка, тексту сторінки й інтерактивних елементів.
+- Автоматичне заповнення відомих полів профілю перед стартом сценарію.
+- Структурований план дій від Gemini; виконуються лише дії, прив’язані до знайдених елементів.
+- Опційне передавання скриншота сторінки моделі.
+- FastAPI endpoint-и для запуску агента, перевірки статусу та читання історії.
+- Історія за анонімним ідентифікатором пристрою; Firestore за наявності конфігурації проєкту.
+- Збереження stdout-логів, стану сторінки й діагностики невдалого запуску.
+- Автоматичні перевірки Python-синтаксису та unit-тести через GitHub Actions.
 
-- `fill` - fill a text field
-- `click` - click an element
-- `select` - select an option, radio, or checkbox
-- `wait` - wait for the page to update
-- `finish` - end because task is complete
-- `stop` - end because agent should not continue
+## Архітектура
 
-## High-level execution flow
+~~~mermaid
+flowchart LR
+    UI["Web client"] --> API["FastAPI<br/>api_server.py"]
+    API --> Worker["Worker process<br/>main.py"]
+    Worker --> Agent["BrowserAgent"]
+    Agent --> Browser["Playwright / Chromium"]
+    Agent --> Gemini["Gemini API"]
+    API --> History["Firestore / local JSON"]
+    Agent --> History
+~~~
 
-1. `main.py` starts Playwright, launches Chromium, creates a page, and initializes `BrowserController`, `GeminiClient`, and `BrowserAgent`.
-2. `BrowserAgent.run()` opens `TEST_URL`.
-3. For each step (up to `MAX_STEPS`):
-   - Inspect URL, title, body text, and interactive elements.
-   - If loading indicators are detected, wait and continue.
-   - Try bootstrap actions (fill known identity fields, click start button).
-   - Optionally capture a screenshot (`ENABLE_VISION=true`).
-   - Ask Gemini for one JSON action.
-   - Execute the action.
-   - Stop on `finish`, `stop`, or repeated-action loop (`MAX_SAME_ACTION`).
-4. Save history to `results/agent_history.json`.
+Подробиці компонентів і життєвого циклу — у [docs/architecture.md](docs/architecture.md).
 
-## Requirements and runtime prerequisites
+## Структура репозиторію
 
-- Python 3.10+ (the code uses `str | None` type syntax)
-- Access to a Gemini API key (`GEMINI_API_KEY`)
-- Playwright Python package and Chromium browser runtime
+~~~text
+.
+├── api_server.py              # HTTP API, запуск worker, статус і історія
+├── main.py                    # Точка входу окремого процесу агента
+├── src/
+│   └── browser_agent/
+│       ├── agent.py           # Цикл агента, дії та запис результатів
+│       ├── browser.py         # Playwright controller
+│       ├── config.py          # Налаштування з environment
+│       ├── llm.py             # Gemini client та structured output
+│       ├── models.py          # Схеми запитів і відповідей моделі
+│       └── prompts.py         # Системний prompt та форматування запиту
+├── tests/
+│   ├── test_device_history.py # Ізоляція історії та збереження логів
+│   └── test_run_status.py     # Відповідність exit code результату агента
+├── docs/
+│   └── architecture.md        # Компоненти, схема та обмеження
+├── .github/workflows/
+│   └── validate.yml           # CI-перевірки
+├── Dockerfile
+├── requirements.txt
+├── pyproject.toml
+├── .env.example
+└── DEPLOYMENT.md
+~~~
 
-Dependencies declared in `requirements.txt`:
+Згенеровані скриншоти та файли історії належать до папок screenshots/ і results/; їх не слід комітити, оскільки вони можуть містити вміст вебсторінок.
 
-- `playwright`
-- `python-dotenv`
-- `google-genai`
-- `pydantic`
+## Як запустити локально
 
-## Installation and setup
+Потрібні Python 3.10+ і доступ до Gemini API.
 
-1. Clone the repository.
-2. Create and activate a virtual environment.
-3. Install dependencies.
-4. Install Playwright Chromium browser binaries.
-5. Configure environment variables.
+~~~bash
+git clone https://github.com/Kokos96/browser-agent.git
+cd browser-agent
 
-```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate       # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m playwright install chromium
+
 cp .env.example .env
-```
+~~~
 
-Edit `.env` with your values (especially `GEMINI_API_KEY`).
+Відредагуй .env: щонайменше задай GEMINI_API_KEY, потрібний TEST_URL і поля профілю. Не коміть .env та не вставляй секрети в issues, скриншоти або README.
 
-## Configuration
+Запуск worker напряму:
 
-Configuration is loaded by `config.py` from environment variables (via `python-dotenv`).
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `GEMINI_API_KEY` | none | Required API key for Gemini client initialization |
-| `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini model name used for `generate_content` |
-| `TEST_URL` | `https://quiz-web-wzr7.onrender.com/` | Initial URL opened by the agent |
-| `USER_SURNAME` | empty string | Bootstrap value for `surname` input |
-| `USER_NAME` | empty string | Bootstrap value for `name` input |
-| `USER_GROUP` | empty string | Bootstrap value for `grp` input |
-| `MAX_STEPS` | `60` | Maximum run loop steps |
-| `ENABLE_VISION` | `true` | If true, screenshots are captured and attached to Gemini requests |
-| `HEADLESS` | `false` | If true, launch Chromium in headless mode |
-| `MAX_SAME_ACTION` | `3` | Loop-protection threshold for repeated identical actions |
-
-## Usage
-
-Run the entry point:
-
-```bash
+~~~bash
 python main.py
-```
+~~~
 
-During execution, the agent prints:
+Для запуску HTTP API локально задай окремий API_TOKEN у своєму .env, після чого виконай:
 
-- Current step number
-- Page title and URL
-- Discovered interactive elements
-- Chosen action, element ID, value, and reason
+~~~bash
+uvicorn api_server:app --host 127.0.0.1 --port 8000
+~~~
 
-## Generated artifacts
+## Конфігурація
 
-- `screenshots/step_XXX.png` when `ENABLE_VISION=true`
-- `results/agent_history.json` after each run
+| Змінна | Призначення |
+| --- | --- |
+| GEMINI_API_KEY | Ключ для Gemini |
+| GEMINI_MODEL | Назва моделі Gemini |
+| TEST_URL | Початкова URL-адреса цільової сторінки |
+| USER_SURNAME, USER_NAME, USER_GROUP | Значення для початкової форми |
+| MAX_STEPS | Максимальна кількість кроків агента |
+| ENABLE_VISION | Чи прикріплювати скриншоти до запиту моделі |
+| HEADLESS | Запуск Chromium без видимого вікна |
+| MAX_SAME_ACTION | Поріг повторення однакової дії |
+| TEST_LOAD_TIMEOUT | Час очікування вмісту тесту |
+| AUTO_SUBMIT | Чи натискати знайдену кнопку фінального надсилання автоматично |
+| API_TOKEN | Спільний токен для захисту API в поточному demo-сценарії |
+| GOOGLE_CLOUD_PROJECT | Вмикає збереження історії у Firestore, якщо service account має доступ |
+| FRONTEND_ORIGINS | Дозволені origin-и вебклієнта, розділені комами |
+| ALLOWED_TEST_HOSTS | Дозволені HTTPS-host-и цільових тестів |
 
-The repository `.gitignore` currently excludes `screenshots/` and `results/` for newly generated files.
+Шаблон значень міститься у [.env.example](.env.example). Не вставляй реальні ключі у цей файл.
 
-## Project structure
+## API
 
-```text
-/home/runner/work/browser-agent/browser-agent/
-├── main.py          # Application entry point
-├── agent.py         # Agent loop, bootstrap logic, action execution, history persistence
-├── browser.py       # Playwright wrapper for inspect/click/fill/select/screenshot/wait
-├── llm.py           # Gemini client integration and retry handling
-├── prompts.py       # System prompt and prompt builder
-├── models.py        # Pydantic action/page models
-├── config.py        # Environment-based settings
-├── requirements.txt # Python dependencies
-├── .env.example     # Example environment variables
-└── screenshots/     # Existing screenshot samples in repository
-```
+| Метод | Endpoint | Призначення |
+| --- | --- | --- |
+| GET | /api/health | Публічна перевірка доступності API |
+| POST | /api/run | Запуск агента |
+| GET | /api/status | Стан активного процесу й останні логи пристрою |
+| GET | /api/history | Історія лише для переданого device token |
+| DELETE | /api/history/{run_id} | Видалення одного запису свого пристрою |
+| DELETE | /api/history | Очищення історії свого пристрою |
 
-## Security and authorization considerations
+Захищені endpoint-и очікують заголовки X-API-Token і X-Device-Token. Не публікуй їх значення.
 
-- Keep `GEMINI_API_KEY` in `.env` only; do not commit it.
-- The prompt restricts the model from unrelated navigation and script execution, but browser automation still performs real page actions. Run only against authorized targets.
-- Review and limit values in `.env` before execution, especially URL and identity fields.
-- Generated history and screenshots may contain page content; handle and store them appropriately.
+## Статус запуску і результат тесту
 
-## Development and testing status
+Це дві різні речі:
 
-No repository-local test, lint, or formatter configuration files were found (for example `pytest.ini`, `pyproject.toml`, or `setup.cfg`).
+- **status** описує життєвий цикл worker-процесу: running, completed або error.
+- **test_outcome** описує те, що агент зміг перевірити: наприклад, вміст тесту не завантажився, очікується ручне надсилання або результат сторінки зчитано.
+- **score** заповнюється лише тоді, коли агент розпізнав підтримуваний формат оцінки.
 
-## Troubleshooting
+Якщо вміст цільової сторінки не завантажився, run записується як помилка, а worker завершується з ненульовим кодом. Це не дозволяє звичайному завершенню Python-процесу маскувати невдалий запуск.
 
-- `RuntimeError: GEMINI_API_KEY is not configured.`
-  - Set `GEMINI_API_KEY` in `.env`.
-- Browser launch or Playwright runtime errors
-  - Ensure Playwright dependencies are installed and run `python -m playwright install chromium`.
-- Agent appears to stall on loading pages
-  - Check `TEST_URL` availability and page behavior.
-- Agent stops due to repeated action loop
-  - Review `MAX_SAME_ACTION`, page state, and model output reasoning.
+## Перевірки
 
-## Contributing
+~~~bash
+python -m py_compile api_server.py main.py src/browser_agent/*.py
+python -m unittest discover -s tests -v
+~~~
 
-There is no contributor guide file in the repository. If you plan to contribute, open an issue or pull request describing the proposed change.
+GitHub Actions запускає ці перевірки на push і pull request. Повний ручний тест також має перевіряти ізоляцію двох пристроїв, збереження історії після оновлення сторінки та сценарій із реально отриманим результатом.
 
-## License
+## Безпека та відомі обмеження
 
-No license file was found in this repository snapshot.
+- Поточний API_TOKEN — спільний demo-токен, а не повноцінна система користувацької автентифікації. Не роздавай його широкій аудиторії.
+- API поки запускає лише один browser worker одночасно; другий паралельний запуск відхиляється.
+- Скриншоти, логи та текст сторінки можуть містити персональні або навчальні дані. Перевіряй їх перед передаванням іншим.
+- Обмежуй цільові URL через ALLOWED_TEST_HOSTS і запускай автоматизацію лише на ресурсах, які маєш право тестувати.
+- У репозиторії поки не визначено окрему LICENSE; це потрібно вирішити перед позиціонуванням як open-source проєкту.
+
+## Розгортання
+
+Інструкції для перевірки та контрольованого розгортання — у [DEPLOYMENT.md](DEPLOYMENT.md). Зміни з робочої гілки не варто розгортати у production, доки CI й ручний тест не пройшли.

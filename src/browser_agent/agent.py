@@ -4,9 +4,9 @@ import re
 import time
 from datetime import datetime, timezone
 
-from browser import BrowserController
-from config import settings
-from llm import GeminiClient
+from .browser import BrowserController
+from .config import settings
+from .llm import GeminiClient
 
 
 class BrowserAgent:
@@ -39,12 +39,13 @@ class BrowserAgent:
             "finished_at": None,
             "duration_seconds": None,
             "status": "running",
+            "test_outcome": "pending",
             "score": None,
             "url": settings.test_url,
             "actions": [],
         }
 
-    async def run(self):
+    async def run(self) -> bool:
 
         print("Agent started")
 
@@ -169,13 +170,25 @@ class BrowserAgent:
                 state
             )
 
+            # A closed or unavailable quiz is a failed run, not a successful exit.
+            self.run_record["status"] = "error"
+            self.run_record["test_outcome"] = "test_content_not_loaded"
+            self.run_record["error"] = "Test content did not load before the configured timeout."
+            self.run_record["failure_stage"] = "test_page_load"
+            self.run_record["diagnostics"] = {
+                "url": state.get("url") or "",
+                "title": state.get("title") or "",
+                "interactive_elements": len(state.get("elements") or []),
+                "page_text_excerpt": str(state.get("text") or "")[:2000],
+            }
+
             print(
                 "ERROR: test content did not load."
             )
 
             await self.save_history()
 
-            return
+            return False
 
         screenshot_path = None
 
@@ -255,10 +268,12 @@ class BrowserAgent:
                     "state": state,
                 }
             )
+            self.run_record["test_outcome"] = "answer_planning_failed"
+            self.run_record["failure_stage"] = "llm_planning"
 
             await self.save_history()
 
-            return
+            return False
 
         # ---------------------------------------------
         # Validate the returned plan.
@@ -411,8 +426,16 @@ class BrowserAgent:
                 "No final submit button detected."
             )
 
+        # Keep process completion separate from the actual test outcome.
+        self.run_record["test_outcome"] = (
+            "awaiting_manual_submission"
+            if submit_id is not None and not settings.auto_submit
+            else "submit_control_not_found"
+        )
+
         # Capture the result only after an actual automatic submission.
         if submitted:
+            self.run_record["test_outcome"] = "submitted_result_unverified"
             try:
                 result_state = await self.browser.inspect()
                 result_text = str(result_state.get("text") or "")
@@ -422,6 +445,7 @@ class BrowserAgent:
                     "text_excerpt": result_text[:3000],
                 }
                 self.run_record["result_page"] = result_page
+                self.run_record["test_outcome"] = "result_page_captured"
 
                 print("Result page URL:", result_page["url"])
                 print("Result page title:", result_page["title"])
@@ -436,12 +460,16 @@ class BrowserAgent:
                 if score_match:
                     score = f"{score_match.group(1)}/{score_match.group(2)}"
                     self.run_record["score"] = score
+                    self.run_record["test_outcome"] = "score_captured"
                     print("Ваш результат:", score)
             except Exception as error:
+                self.run_record["test_outcome"] = "result_capture_failed"
+                self.run_record["result_capture_error"] = str(error)
                 print("Result page capture failed:", error)
 
         self.run_record["status"] = "completed"
         await self.save_history()
+        return True
 
     def is_loading(
         self,
