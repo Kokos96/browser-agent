@@ -303,8 +303,23 @@ async def collect_output(proc, run_key: str, device_id: str, run_id: str):
         if state_run_key == run_key:
             state = "error"
             logs.append(error_message)
+        # If log collection itself fails, stop the worker so it cannot remain
+        # blocked on a full stdout pipe and keep this run stuck as "running".
         try:
-            await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs, proc.returncode)
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
+        except Exception as cleanup_error:
+            captured_logs.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "message": f"Worker cleanup after output-reader failure also failed: {cleanup_error}",
+            })
+
+        failure_code = proc.returncode if proc.returncode is not None else 1
+        try:
+            await asyncio.to_thread(
+                persist_run_logs, device_id, run_id, captured_logs, failure_code
+            )
         except Exception:
             pass
 
