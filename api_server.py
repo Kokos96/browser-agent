@@ -63,10 +63,16 @@ app.add_middleware(
     ],
 )
 
+DEFAULT_AGENT_RUN_TIMEOUT_SECONDS = 180
+AGENT_RUN_TIMEOUT_SECONDS = int(
+    os.getenv("AGENT_RUN_TIMEOUT_SECONDS", str(DEFAULT_AGENT_RUN_TIMEOUT_SECONDS))
+)
+
 process = None
 state = "idle"
 state_device_id = None
 state_run_key = None
+state_started_at = None
 logs = []
 lock = asyncio.Lock()
 
@@ -150,11 +156,89 @@ def remove_local_history_records(device_id: str, run_id: str | None = None) -> i
     return deleted
 
 
+def record_run_start(
+    device_id: str,
+    run_id: str,
+    url: str,
+    model: str | None = None,
+):
+    """Persist the initial 'running' state immediately to history and Firestore."""
+    import json
+    import tempfile
+
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    initial_record = {
+        "device_id": device_id,
+        "run_id": run_id,
+        "model": model or "gemini-3.6-flash",
+        "model_provider": "Google Gemini",
+        "started_at": started_at,
+        "finished_at": None,
+        "duration_seconds": None,
+        "status": "running",
+        "test_outcome": "pending",
+        "score": None,
+        "url": url,
+        "actions": [],
+        "logs": [],
+        "log_count": 0,
+    }
+
+    history_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "results",
+        "agent_history.json",
+    )
+    os.makedirs(os.path.dirname(history_path), exist_ok=True)
+
+    try:
+        try:
+            with open(history_path, "r", encoding="utf-8") as file:
+                records = json.load(file)
+            if not isinstance(records, list):
+                records = []
+        except (FileNotFoundError, json.JSONDecodeError):
+            records = []
+
+        records.append(initial_record)
+
+        fd, temp_path = tempfile.mkstemp(
+            dir=os.path.dirname(history_path), prefix="history_start_", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                json.dump(records, file, ensure_ascii=False, indent=2, default=str)
+            os.replace(temp_path, history_path)
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as exc:
+        print(f"Local start record save failed: {exc}")
+
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    if project_id:
+        try:
+            from google.cloud import firestore
+
+            ref = (
+                firestore.Client(project=project_id)
+                .collection("devices")
+                .document(device_id)
+                .collection("runs")
+                .document(str(run_id))
+            )
+            ref.set(initial_record, merge=True)
+        except Exception as exc:
+            print(f"Firestore start record save failed: {exc}")
+
+
 def persist_run_logs(
     device_id: str,
     run_id: str,
     captured_logs: list[dict],
     exit_code: int | None = None,
+    status_override: str | None = None,
+    outcome_override: str | None = None,
 ):
     """Persist subprocess output and synchronize the process status for one run."""
     import json
@@ -169,11 +253,16 @@ def persist_run_logs(
     )
     os.makedirs(os.path.dirname(history_path), exist_ok=True)
 
-    process_status = (
-        "unknown"
-        if exit_code is None
-        else "completed" if exit_code == 0 else "error"
-    )
+    if status_override:
+        process_status = status_override
+    elif exit_code is None:
+        process_status = "unknown"
+    elif exit_code == 0:
+        process_status = "completed"
+    elif exit_code == 124:
+        process_status = "timeout"
+    else:
+        process_status = "error"
 
     try:
         try:
@@ -198,7 +287,7 @@ def persist_run_logs(
                 "device_id": device_id,
                 "run_id": run_id,
                 "status": process_status,
-                "test_outcome": "unknown",
+                "test_outcome": outcome_override or "unknown",
             }
             records.append(record)
 
@@ -208,6 +297,24 @@ def persist_run_logs(
             record["process_finished_at"] = saved_at
             # Keep the user-visible process status consistent with the exit code.
             record["status"] = process_status
+        elif status_override:
+            record["status"] = status_override
+            record["process_status"] = status_override
+            record["process_finished_at"] = saved_at
+
+        if outcome_override and (not record.get("test_outcome") or record.get("test_outcome") in ("unknown", "pending")):
+            record["test_outcome"] = outcome_override
+
+        if not record.get("finished_at"):
+            record["finished_at"] = saved_at
+
+        if record.get("duration_seconds") is None and record.get("started_at"):
+            try:
+                start_dt = datetime.fromisoformat(record["started_at"])
+                end_dt = datetime.fromisoformat(saved_at)
+                record["duration_seconds"] = max(0.0, round((end_dt - start_dt).total_seconds(), 1))
+            except Exception:
+                pass
 
         record["logs"] = captured_logs[-1000:]
         record["log_count"] = len(captured_logs)
@@ -246,6 +353,17 @@ def persist_run_logs(
                     "process_finished_at": saved_at,
                     "status": process_status,
                 })
+            elif status_override:
+                payload.update({
+                    "status": status_override,
+                    "process_status": status_override,
+                    "process_finished_at": saved_at,
+                })
+
+            if outcome_override:
+                payload["test_outcome"] = outcome_override
+            if not payload.get("finished_at"):
+                payload["finished_at"] = saved_at
 
             ref = (
                 firestore.Client(project=project_id)
@@ -264,68 +382,134 @@ def persist_run_logs(
         print(f"Firestore log history save failed: {cloud_error}")
 
 
+def reconcile_stale_record(record: dict) -> bool:
+    """
+    Check if a record is stuck in 'running' or 'pending' without an active process.
+    If stale, transition it to 'abandoned' / 'error' and return True.
+    """
+    status = str(record.get("status") or "").lower()
+    if status not in ("running", "processing", "in_progress"):
+        return False
+
+    run_id = str(record.get("run_id") or "")
+    is_live = (
+        process is not None
+        and process.returncode is None
+        and state_run_key == run_id
+    )
+    if is_live and state_started_at is not None:
+        now_epoch = datetime.now(timezone.utc).timestamp()
+        if now_epoch - state_started_at > AGENT_RUN_TIMEOUT_SECONDS:
+            is_live = False
+
+    if not is_live:
+        saved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        record["status"] = "abandoned"
+        record["process_status"] = "abandoned"
+        record["process_exit_code"] = record.get("process_exit_code") or -1
+        if record.get("test_outcome") in (None, "unknown", "pending"):
+            record["test_outcome"] = "stale_run_abandoned"
+        if not record.get("finished_at"):
+            record["finished_at"] = record.get("logs_saved_at") or record.get("started_at") or saved_at
+        if not record.get("error"):
+            record["error"] = "Процес перервано або контейнер перезапущено (stale run)"
+        if record.get("duration_seconds") is None and record.get("started_at") and record.get("finished_at"):
+            try:
+                s = datetime.fromisoformat(record["started_at"])
+                f = datetime.fromisoformat(record["finished_at"])
+                record["duration_seconds"] = max(0.0, round((f - s).total_seconds(), 1))
+            except Exception:
+                pass
+        return True
+    return False
+
+
 async def collect_output(proc, run_key: str, device_id: str, run_id: str):
     global state, logs
     captured_logs = []
+    code = None
+    timed_out = False
 
-    try:
+    async def _read_stream():
         while True:
             line = await proc.stdout.readline()
-
             if not line:
                 break
-
             message = line.decode("utf-8", errors="replace").rstrip("\r\n")
             captured_logs.append({
                 "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "message": message,
             })
-
-            # A previous reader must never append logs to a newer run.
             if state_run_key == run_key:
                 logs.append(message)
                 del logs[:-150]
+        return await proc.wait()
 
-        code = await proc.wait()
+    try:
+        code = await asyncio.wait_for(
+            _read_stream(),
+            timeout=AGENT_RUN_TIMEOUT_SECONDS,
+        )
         exit_message = f"Process exited with code {code}"
         captured_logs.append({
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "message": exit_message,
         })
         if state_run_key == run_key:
-            state = "completed" if code == 0 else "error"
             logs.append(exit_message)
 
-        await asyncio.to_thread(persist_run_logs, device_id, run_id, captured_logs, code)
+    except asyncio.TimeoutError:
+        timed_out = True
+        code = 124
+        timeout_message = f"Agent execution timed out after {AGENT_RUN_TIMEOUT_SECONDS}s"
+        captured_logs.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "message": timeout_message,
+        })
+        if state_run_key == run_key:
+            logs.append(timeout_message)
+        try:
+            if proc.returncode is None:
+                proc.kill()
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except Exception:
+            pass
 
     except Exception as exc:
+        code = proc.returncode if proc.returncode is not None else 1
         error_message = f"Output reader error: {exc}"
         captured_logs.append({
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "message": error_message,
         })
         if state_run_key == run_key:
-            state = "error"
             logs.append(error_message)
-        # If log collection itself fails, stop the worker so it cannot remain
-        # blocked on a full stdout pipe and keep this run stuck as "running".
         try:
             if proc.returncode is None:
                 proc.kill()
-            await proc.wait()
-        except Exception as cleanup_error:
-            captured_logs.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "message": f"Worker cleanup after output-reader failure also failed: {cleanup_error}",
-            })
-
-        failure_code = proc.returncode if proc.returncode is not None else 1
-        try:
-            await asyncio.to_thread(
-                persist_run_logs, device_id, run_id, captured_logs, failure_code
-            )
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
         except Exception:
             pass
+
+    finally:
+        final_status = "timeout" if timed_out else ("completed" if code == 0 else "error")
+        final_outcome = "timeout" if timed_out else None
+
+        if state_run_key == run_key:
+            state = final_status
+
+        try:
+            await asyncio.to_thread(
+                persist_run_logs,
+                device_id,
+                run_id,
+                captured_logs,
+                code,
+                status_override=final_status,
+                outcome_override=final_outcome,
+            )
+        except Exception as persist_err:
+            print(f"Error persisting logs: {persist_err}")
 
 
 @app.get("/api/health")
@@ -373,6 +557,7 @@ async def run_agent(
         state_device_id = device_id
         run_key = uuid.uuid4().hex
         state_run_key = run_key
+        state_started_at = datetime.now(timezone.utc).timestamp()
         env = os.environ.copy()
         env["TEST_URL"] = url
         env["USER_NAME"] = request.first_name.strip()
@@ -402,6 +587,7 @@ async def run_agent(
             ) from exc
 
         state = "running"
+        record_run_start(device_id, run_key, url, request.model)
         asyncio.create_task(collect_output(process, run_key, device_id, run_key))
 
     return {
@@ -416,10 +602,19 @@ async def get_status(
     x_api_token: str | None = Header(default=None),
     x_device_token: str | None = Header(default=None),
 ):
+    global state
     authorize(x_api_token)
     device_id = device_owner_id(x_device_token)
     if state_device_id != device_id:
         return {"status": "idle", "logs": []}
+
+    # Reconcile in-memory state if subprocess finished unexpectedly
+    if state == "running":
+        if process is not None and process.returncode is not None:
+            state = "completed" if process.returncode == 0 else "error"
+        elif process is None:
+            state = "idle"
+
     return {"status": state, "logs": logs[-50:]}
 
 
@@ -522,6 +717,13 @@ async def get_history(
                 .stream()
             )
             records = [doc.to_dict() for doc in docs]
+            for record in records:
+                if isinstance(record, dict) and reconcile_stale_record(record):
+                    try:
+                        db.collection("devices").document(device_id).collection("runs").document(str(record["run_id"])).set(record, merge=True)
+                    except Exception as err:
+                        print(f"Failed to persist reconciled firestore record: {err}")
+
             records.sort(
                 key=lambda item: item.get("started_at", ""),
                 reverse=True,
@@ -559,6 +761,30 @@ async def get_history(
         item for item in records
         if isinstance(item, dict) and item.get("device_id") == device_id
     ]
+
+    modified_any = False
+    for item in records:
+        if reconcile_stale_record(item):
+            modified_any = True
+
+    if modified_any:
+        try:
+            with open(history_path, "r", encoding="utf-8") as file:
+                all_records = json.load(file)
+            if isinstance(all_records, list):
+                rec_map = {str(r.get("run_id")): r for r in records if isinstance(r, dict)}
+                for i, r in enumerate(all_records):
+                    if isinstance(r, dict) and str(r.get("run_id")) in rec_map:
+                        all_records[i] = rec_map[str(r.get("run_id"))]
+                import tempfile
+                fd, temp_path = tempfile.mkstemp(
+                    dir=os.path.dirname(history_path), prefix="history_reconcile_", suffix=".tmp"
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as file:
+                    json.dump(all_records, file, ensure_ascii=False, indent=2, default=str)
+                os.replace(temp_path, history_path)
+        except Exception as exc:
+            print(f"Failed to persist reconciled local records: {exc}")
 
     records.sort(
         key=lambda item: item.get("started_at", "")
