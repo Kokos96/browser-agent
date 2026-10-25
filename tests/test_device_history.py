@@ -235,8 +235,12 @@ class DeviceHistoryTests(unittest.TestCase):
     def test_allowed_hosts_contains_controlled_test_stand(self):
         self.assertIn("browser-agent-web-nine.vercel.app", api_server.ALLOWED_HOSTS)
         self.assertIn("quiz-web-wzr7.onrender.com", api_server.ALLOWED_HOSTS)
-        self.assertIn("localhost", api_server.ALLOWED_HOSTS)
-        self.assertIn("127.0.0.1", api_server.ALLOWED_HOSTS)
+        self.assertNotIn("localhost", api_server.ALLOWED_HOSTS)
+        self.assertNotIn("127.0.0.1", api_server.ALLOWED_HOSTS)
+
+    def test_allowed_hosts_rejects_untrusted_and_local_targets_by_default(self):
+        self.assertNotIn("evil.com", api_server.ALLOWED_HOSTS)
+        self.assertNotIn("internal.corp", api_server.ALLOWED_HOSTS)
 
 
 if __name__ == "__main__":

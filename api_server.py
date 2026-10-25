@@ -37,9 +37,7 @@ if CURRENT_FRONTEND_ORIGIN not in FRONTEND_ORIGINS:
 
 DEFAULT_ALLOWED_TEST_HOSTS = (
     "quiz-web-wzr7.onrender.com,"
-    "browser-agent-web-nine.vercel.app,"
-    "localhost,"
-    "127.0.0.1"
+    "browser-agent-web-nine.vercel.app"
 )
 ALLOWED_HOSTS = {
     host.strip().lower()
