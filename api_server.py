@@ -67,6 +67,10 @@ DEFAULT_AGENT_RUN_TIMEOUT_SECONDS = 180
 AGENT_RUN_TIMEOUT_SECONDS = int(
     os.getenv("AGENT_RUN_TIMEOUT_SECONDS", str(DEFAULT_AGENT_RUN_TIMEOUT_SECONDS))
 )
+HEARTBEAT_INTERVAL_SECONDS = 5
+STALE_HEARTBEAT_THRESHOLD_SECONDS = int(
+    os.getenv("STALE_HEARTBEAT_THRESHOLD_SECONDS", "30")
+)
 
 process = None
 state = "idle"
@@ -173,6 +177,7 @@ def record_run_start(
         "model": model or "gemini-3.6-flash",
         "model_provider": "Google Gemini",
         "started_at": started_at,
+        "last_heartbeat_at": started_at,
         "finished_at": None,
         "duration_seconds": None,
         "status": "running",
@@ -230,6 +235,67 @@ def record_run_start(
             ref.set(initial_record, merge=True)
         except Exception as exc:
             print(f"Firestore start record save failed: {exc}")
+
+
+def update_run_heartbeat(
+    device_id: str,
+    run_id: str,
+    latest_logs: list[dict] | None = None,
+):
+    """Update last_heartbeat_at and optional latest logs in Firestore and local history."""
+    import json
+    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    if project_id:
+        try:
+            from google.cloud import firestore
+
+            payload = {"last_heartbeat_at": now_iso}
+            if latest_logs is not None:
+                payload["logs"] = latest_logs[-1000:]
+                payload["log_count"] = len(latest_logs)
+                payload["logs_saved_at"] = now_iso
+            ref = (
+                firestore.Client(project=project_id)
+                .collection("devices")
+                .document(device_id)
+                .collection("runs")
+                .document(str(run_id))
+            )
+            ref.set(payload, merge=True)
+        except Exception as exc:
+            print(f"Firestore heartbeat update failed: {exc}")
+
+    history_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "results",
+        "agent_history.json",
+    )
+    try:
+        if os.path.exists(history_path):
+            with open(history_path, "r", encoding="utf-8") as file:
+                records = json.load(file)
+            if isinstance(records, list):
+                updated = False
+                for r in records:
+                    if isinstance(r, dict) and r.get("device_id") == device_id and r.get("run_id") == run_id:
+                        r["last_heartbeat_at"] = now_iso
+                        if latest_logs is not None:
+                            r["logs"] = latest_logs[-1000:]
+                            r["log_count"] = len(latest_logs)
+                            r["logs_saved_at"] = now_iso
+                        updated = True
+                        break
+                if updated:
+                    import tempfile
+                    fd, temp_path = tempfile.mkstemp(
+                        dir=os.path.dirname(history_path), prefix="history_hb_", suffix=".tmp"
+                    )
+                    with os.fdopen(fd, "w", encoding="utf-8") as file:
+                        json.dump(records, file, ensure_ascii=False, indent=2, default=str)
+                    os.replace(temp_path, history_path)
+    except Exception:
+        pass
 
 
 def persist_run_logs(
@@ -385,22 +451,39 @@ def persist_run_logs(
 def reconcile_stale_record(record: dict) -> bool:
     """
     Check if a record is stuck in 'running' or 'pending' without an active process.
-    If stale, transition it to 'abandoned' / 'error' and return True.
+    If truly stale (heartbeat or run timeout exceeded), transition it to 'abandoned'.
     """
     status = str(record.get("status") or "").lower()
     if status not in ("running", "processing", "in_progress"):
         return False
 
     run_id = str(record.get("run_id") or "")
-    is_live = (
+    now_epoch = datetime.now(timezone.utc).timestamp()
+
+    is_local_run = (
         process is not None
         and process.returncode is None
         and state_run_key == run_id
     )
-    if is_live and state_started_at is not None:
-        now_epoch = datetime.now(timezone.utc).timestamp()
-        if now_epoch - state_started_at > AGENT_RUN_TIMEOUT_SECONDS:
+
+    if is_local_run:
+        if state_started_at is not None and (now_epoch - state_started_at > AGENT_RUN_TIMEOUT_SECONDS):
             is_live = False
+        else:
+            is_live = True
+    else:
+        # Cross-instance check: do not declare a remote worker abandoned if heartbeats are fresh
+        last_hb = record.get("last_heartbeat_at") or record.get("logs_saved_at") or record.get("started_at")
+        started = record.get("started_at")
+        is_live = False
+        if last_hb and started:
+            try:
+                hb_epoch = datetime.fromisoformat(last_hb).timestamp()
+                started_epoch = datetime.fromisoformat(started).timestamp()
+                if (now_epoch - hb_epoch <= STALE_HEARTBEAT_THRESHOLD_SECONDS) and (now_epoch - started_epoch <= AGENT_RUN_TIMEOUT_SECONDS):
+                    is_live = True
+            except Exception:
+                is_live = False
 
     if not is_live:
         saved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -410,7 +493,7 @@ def reconcile_stale_record(record: dict) -> bool:
         if record.get("test_outcome") in (None, "unknown", "pending"):
             record["test_outcome"] = "stale_run_abandoned"
         if not record.get("finished_at"):
-            record["finished_at"] = record.get("logs_saved_at") or record.get("started_at") or saved_at
+            record["finished_at"] = record.get("last_heartbeat_at") or record.get("logs_saved_at") or record.get("started_at") or saved_at
         if not record.get("error"):
             record["error"] = "Процес перервано або контейнер перезапущено (stale run)"
         if record.get("duration_seconds") is None and record.get("started_at") and record.get("finished_at"):
@@ -429,6 +512,22 @@ async def collect_output(proc, run_key: str, device_id: str, run_id: str):
     captured_logs = []
     code = None
     timed_out = False
+
+    stop_heartbeat = asyncio.Event()
+
+    async def _heartbeat_loop():
+        while not stop_heartbeat.is_set():
+            try:
+                await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
+                if stop_heartbeat.is_set():
+                    break
+                await asyncio.to_thread(update_run_heartbeat, device_id, run_id, captured_logs)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
+
+    heartbeat_task = asyncio.create_task(_heartbeat_loop())
 
     async def _read_stream():
         while True:
@@ -492,6 +591,9 @@ async def collect_output(proc, run_key: str, device_id: str, run_id: str):
             pass
 
     finally:
+        stop_heartbeat.set()
+        heartbeat_task.cancel()
+
         final_status = "timeout" if timed_out else ("completed" if code == 0 else "error")
         final_outcome = "timeout" if timed_out else None
 
@@ -524,7 +626,7 @@ async def run_agent(
     x_api_token: str | None = Header(default=None),
     x_device_token: str | None = Header(default=None),
 ):
-    global process, state, state_device_id, state_run_key, logs
+    global process, state, state_device_id, state_run_key, state_started_at, logs
 
     authorize(x_api_token)
     device_id = device_owner_id(x_device_token)
@@ -605,17 +707,88 @@ async def get_status(
     global state
     authorize(x_api_token)
     device_id = device_owner_id(x_device_token)
-    if state_device_id != device_id:
-        return {"status": "idle", "logs": []}
 
-    # Reconcile in-memory state if subprocess finished unexpectedly
-    if state == "running":
+    # 1. If this instance has an active in-memory run for this device
+    if state_device_id == device_id and state == "running":
         if process is not None and process.returncode is not None:
             state = "completed" if process.returncode == 0 else "error"
-        elif process is None:
-            state = "idle"
+        return {"status": state, "logs": logs[-50:]}
 
-    return {"status": state, "logs": logs[-50:]}
+    # 2. Check shared Firestore (or local file fallback) for remote runs on other instances
+    import json
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+    latest_run = None
+
+    if project_id:
+        try:
+            from google.cloud import firestore
+
+            db = firestore.Client(project=project_id)
+            query = (
+                db.collection("devices")
+                .document(device_id)
+                .collection("runs")
+                .order_by("started_at", direction=firestore.Query.DESCENDING)
+                .limit(1)
+            )
+            docs = list(query.stream())
+            if docs:
+                latest_run = docs[0].to_dict()
+        except Exception as exc:
+            print(f"Firestore status lookup failed: {exc}")
+    else:
+        history_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "results", "agent_history.json"
+        )
+        try:
+            if os.path.exists(history_path):
+                with open(history_path, "r", encoding="utf-8") as file:
+                    records = json.load(file)
+                if isinstance(records, list):
+                    device_runs = [
+                        r for r in records
+                        if isinstance(r, dict) and r.get("device_id") == device_id
+                    ]
+                    if device_runs:
+                        device_runs.sort(key=lambda r: r.get("started_at", ""), reverse=True)
+                        latest_run = device_runs[0]
+        except Exception:
+            pass
+
+    if latest_run and isinstance(latest_run, dict):
+        run_status = str(latest_run.get("status") or "").lower()
+        formatted_logs = [
+            l.get("message", "") if isinstance(l, dict) else str(l)
+            for l in latest_run.get("logs", [])
+        ][-50:]
+
+        if run_status in ("running", "processing", "in_progress"):
+            # Check if truly stale across instances
+            if reconcile_stale_record(latest_run):
+                if project_id:
+                    try:
+                        db.collection("devices").document(device_id).collection("runs").document(str(latest_run["run_id"])).set(latest_run, merge=True)
+                    except Exception:
+                        pass
+                return {"status": latest_run["status"], "logs": formatted_logs}
+            else:
+                # Still actively running on another container instance!
+                return {"status": "running", "logs": formatted_logs}
+        elif run_status in ("completed", "error", "timeout", "abandoned"):
+            finished_at = latest_run.get("finished_at")
+            if finished_at:
+                try:
+                    fin_epoch = datetime.fromisoformat(finished_at).timestamp()
+                    # Return recent terminal status within 60s of finish so client detects completion
+                    if datetime.now(timezone.utc).timestamp() - fin_epoch < 60:
+                        return {"status": run_status, "logs": formatted_logs}
+                except Exception:
+                    pass
+
+    return {
+        "status": state if state_device_id == device_id else "idle",
+        "logs": logs[-50:] if state_device_id == device_id else [],
+    }
 
 
 @app.delete("/api/history/{run_id}")

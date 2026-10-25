@@ -195,5 +195,154 @@ class RunTimeoutAndLifecycleTests(unittest.TestCase):
                 self.assertEqual(agent.run_record["test_outcome"], "unhandled_exception")
 
 
+    def test_run_agent_sets_global_state_started_at(self):
+        token = "f" * 64
+        req = api_server.RunRequest(
+            url="https://browser-agent-web-nine.vercel.app/test-quiz",
+            first_name="Test",
+            last_name="User",
+            group_name="Group-1",
+        )
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = None
+        mock_proc.stdout.readline = AsyncMock(return_value=b"")
+        mock_proc.wait = AsyncMock(return_value=0)
+
+        api_server.state_started_at = None
+
+        with (
+            patch.object(api_server, "API_TOKEN", "test-token"),
+            patch.object(api_server, "record_run_start"),
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)),
+        ):
+            res = asyncio.run(api_server.run_agent(req, "test-token", token))
+            self.assertEqual(res["status"], "running")
+            self.assertIsNotNone(api_server.state_started_at)
+            self.assertGreater(api_server.state_started_at, 0)
+
+    def test_reconcile_stale_record_keeps_active_remote_run(self):
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        record = {
+            "run_id": "remote-active-run",
+            "status": "running",
+            "started_at": now_iso,
+            "last_heartbeat_at": now_iso,
+        }
+
+        # Simulate a different instance where local process is None
+        with patch.object(api_server, "process", None), patch.object(api_server, "state_run_key", None):
+            modified = api_server.reconcile_stale_record(record)
+            self.assertFalse(modified)
+            self.assertEqual(record["status"], "running")
+
+    def test_reconcile_stale_record_abandons_remote_run_after_heartbeat_timeout(self):
+        from datetime import datetime, timedelta, timezone
+        old_time = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat(timespec="seconds")
+
+        record = {
+            "run_id": "remote-dead-run",
+            "status": "running",
+            "started_at": old_time,
+            "last_heartbeat_at": old_time,
+        }
+
+        with patch.object(api_server, "process", None), patch.object(api_server, "state_run_key", None):
+            modified = api_server.reconcile_stale_record(record)
+            self.assertTrue(modified)
+            self.assertEqual(record["status"], "abandoned")
+            self.assertEqual(record["test_outcome"], "stale_run_abandoned")
+
+    def test_get_status_from_another_instance_reads_remote_active_run(self):
+        from datetime import datetime, timezone
+        token = "3" * 64
+        device_id = api_server.device_owner_id(token)
+        now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        remote_run = {
+            "run_id": "remote-run-123",
+            "device_id": device_id,
+            "status": "running",
+            "started_at": now_iso,
+            "last_heartbeat_at": now_iso,
+            "logs": [{"message": "Navigating to quiz page..."}],
+        }
+
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = remote_run
+
+        mock_query = MagicMock()
+        mock_query.stream.return_value = [mock_doc]
+
+        mock_runs_col = MagicMock()
+        mock_runs_col.order_by.return_value.limit.return_value = mock_query
+
+        mock_device_doc = MagicMock()
+        mock_device_doc.collection.return_value = mock_runs_col
+
+        mock_devices_col = MagicMock()
+        mock_devices_col.document.return_value = mock_device_doc
+
+        mock_client = MagicMock()
+        mock_client.collection.return_value = mock_devices_col
+
+        with (
+            patch.object(api_server, "API_TOKEN", "test-token"),
+            patch.object(api_server, "state_device_id", None),
+            patch.object(api_server, "process", None),
+            patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "test-project"}),
+            patch("google.cloud.firestore.Client", return_value=mock_client),
+        ):
+            status_data = asyncio.run(api_server.get_status("test-token", token))
+            self.assertEqual(status_data["status"], "running")
+            self.assertEqual(status_data["logs"], ["Navigating to quiz page..."])
+
+    def test_get_status_from_another_instance_reads_recently_completed_run(self):
+        from datetime import datetime, timezone
+        token = "4" * 64
+        device_id = api_server.device_owner_id(token)
+        now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        completed_run = {
+            "run_id": "remote-run-done",
+            "device_id": device_id,
+            "status": "completed",
+            "started_at": now_iso,
+            "finished_at": now_iso,
+            "logs": [{"message": "Process exited with code 0"}],
+        }
+
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = completed_run
+
+        mock_query = MagicMock()
+        mock_query.stream.return_value = [mock_doc]
+
+        mock_runs_col = MagicMock()
+        mock_runs_col.order_by.return_value.limit.return_value = mock_query
+
+        mock_device_doc = MagicMock()
+        mock_device_doc.collection.return_value = mock_runs_col
+
+        mock_devices_col = MagicMock()
+        mock_devices_col.document.return_value = mock_device_doc
+
+        mock_client = MagicMock()
+        mock_client.collection.return_value = mock_devices_col
+
+        with (
+            patch.object(api_server, "API_TOKEN", "test-token"),
+            patch.object(api_server, "state_device_id", None),
+            patch.object(api_server, "process", None),
+            patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "test-project"}),
+            patch("google.cloud.firestore.Client", return_value=mock_client),
+        ):
+            status_data = asyncio.run(api_server.get_status("test-token", token))
+            self.assertEqual(status_data["status"], "completed")
+            self.assertEqual(status_data["logs"], ["Process exited with code 0"])
+
+
 if __name__ == "__main__":
     unittest.main()
