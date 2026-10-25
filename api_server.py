@@ -35,11 +35,15 @@ CURRENT_FRONTEND_ORIGIN = "https://browser-agent-web-nine.vercel.app"
 if CURRENT_FRONTEND_ORIGIN not in FRONTEND_ORIGINS:
     FRONTEND_ORIGINS.append(CURRENT_FRONTEND_ORIGIN)
 
+DEFAULT_ALLOWED_TEST_HOSTS = (
+    "quiz-web-wzr7.onrender.com,"
+    "browser-agent-web-nine.vercel.app"
+)
 ALLOWED_HOSTS = {
     host.strip().lower()
     for host in os.getenv(
         "ALLOWED_TEST_HOSTS",
-        "quiz-web-wzr7.onrender.com",
+        DEFAULT_ALLOWED_TEST_HOSTS,
     ).split(",")
     if host.strip()
 }
