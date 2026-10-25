@@ -1,13 +1,13 @@
-# Deployment checklist
+# Deployment checklist and Operational Guide
 
 Do not deploy a working branch to the production Cloud Run service until CI and manual checks pass.
 
-## 1. Validate the branch locally
+## 1. Validate the main branch locally
 
 ~~~bash
 git fetch origin
-git switch improve/run-status-and-docs
-git pull --ff-only origin improve/run-status-and-docs
+git switch main
+git pull --ff-only origin main
 python -m pip install -r requirements.txt
 python -m py_compile api_server.py main.py src/browser_agent/*.py
 python -m unittest discover -s tests -v
@@ -15,25 +15,35 @@ python -m unittest discover -s tests -v
 
 Keep any local edits and backup files. Do not use git reset --hard as a shortcut.
 
-## 2. Review what changed
+## 2. Review what changed in PR #6
 
-- Confirm main.py loads modules from src/browser_agent/.
-- Confirm page-load and AI-planning failures are saved with status=error.
-- Confirm the worker exits non-zero when the agent explicitly reports failure.
-- Confirm the API stores the subprocess exit code and synchronizes history status.
-- Confirm results/ and screenshots/ remain out of Git and the container build context.
+- Process lifecycle watchdog with global execution timeout (`AGENT_RUN_TIMEOUT_SECONDS=180`).
+- Background heartbeat loop (`_heartbeat_loop()`) refreshing every 5 seconds.
+- Distributed stale run reconciliation (`reconcile_stale_record`) with Firestore and local fallback.
+- Multi-instance status routing via `/api/status`.
+- Top-level exception interception in `BrowserAgent.run()`, ensuring terminal `error` records are always saved.
+- Controlled test stand host allowlist (`quiz-web-wzr7.onrender.com` and `browser-agent-web-nine.vercel.app`).
+- Autonomous QA & Self-Healing loop framework (`src/browser_agent/autonomous_qa/`).
 
-## 3. Deploy only after review
+## 3. Deploy to Cloud Run (Manual Release Step)
 
-Use the existing Google Cloud project and service configuration. The command below is a manual release step, not something performed by CI:
+> [!IMPORTANT]
+> **CPU Allocation Requirement**: `api_server.py` delegates execution to a background subprocess (`asyncio.create_task()`) and immediately returns HTTP 200. Under default Cloud Run request-based billing, CPU is throttled to 0% after the response returns.
+> You **MUST** specify `--no-cpu-throttling` (or enable *CPU always allocated* in GCP Console) so the background Playwright process and heartbeats continue running reliably.
+
+Execute the deployment command below from Google Cloud Shell or a workstation with authenticated `gcloud`:
 
 ~~~bash
 gcloud run deploy browser-agent \
   --source . \
-  --region europe-west1
+  --region europe-west1 \
+  --no-cpu-throttling \
+  --min-instances 0 \
+  --max-instances 1 \
+  --timeout 300
 ~~~
 
-Verify that the existing secret-backed environment variables are still configured in Cloud Run after deployment. Never print or paste secret values.
+Verify that existing secret-backed environment variables (`API_TOKEN`, `GEMINI_API_KEY`, `ALLOWED_TEST_HOSTS`) remain configured in Cloud Run after deployment. Never print or paste secret values.
 
 Check public health:
 
@@ -47,19 +57,42 @@ Expected response shape:
 {"ok":true,"service":"browser-agent-api"}
 ~~~
 
-## 4. Required smoke tests
+## 4. Rollback Procedure
 
-1. Launch a run using a currently available, authorized test URL.
-2. Verify that a page-load failure is saved as error, with test_outcome and diagnostic page information.
-3. Verify the API status and history agree after the worker exits.
-4. Verify a genuinely completed run is not automatically described as a passed test unless a result was captured.
-5. Check history isolation from two separate browser/device tokens.
-6. Verify logs and history remain available after refreshing the web client.
+If the new revision encounters any production issues, revert traffic to the previous known stable revision immediately:
 
-Deploy the frontend preview only after the backend passes these checks, then test the full flow before promoting the frontend.
+~~~bash
+# 1. List revisions to identify the previous revision name
+gcloud run revisions list \
+  --service browser-agent \
+  --region europe-west1
 
-## Current limits
+# 2. Redirect 100% of traffic to the target previous revision
+gcloud run services update-traffic browser-agent \
+  --region europe-west1 \
+  --to-revisions PREVIOUS_REVISION_NAME=100
+~~~
 
-- The API currently supports one active worker at a time.
-- The shared API_TOKEN is suitable only for the current private demo. Do not treat it as production-grade end-user authentication.
-- Firestore records use devices/{device_id}/runs/{run_id} when a Google Cloud project is configured; local JSON is a fallback.
+## 5. Autonomous QA & Self-Healing Loop
+
+The codebase includes an automated audit-fix-validate proof-of-concept loop:
+
+~~~bash
+# Run the autonomous QA test suite
+python -m unittest tests/test_autonomous_qa.py -v
+~~~
+
+The loop operates through 4 distinct decoupled roles:
+- **QAAuditor**: Read-only defect scanner and structured report generator.
+- **Fixer**: Applies targeted patches in an isolated branch/worktree.
+- **IndependentValidator**: Evaluates diffs and test suites with zero developer trust.
+- **Orchestrator**: Enforces quality gates, max 5 iterations, and maintains decision logs.
+
+## 6. Required smoke tests
+
+1. Launch a run using the verified test stand: `https://browser-agent-web-nine.vercel.app/test-quiz`.
+2. Verify that the agent fills the student profile, answers all 3 questions, and submits.
+3. Verify that the score is captured (`Ваш результат: 3 / 3 (100%)`).
+4. Verify the API status transitions from `running` to `completed` in UI and polling terminates.
+5. Verify an unreachable URL terminates with a controlled `error` or `timeout`.
+6. Verify logs and history remain accessible after refreshing the web client.
