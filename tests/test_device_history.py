@@ -232,5 +232,12 @@ class DeviceHistoryTests(unittest.TestCase):
             self.assertIsNone(records[0]["score"])
 
 
+    def test_allowed_hosts_contains_controlled_test_stand(self):
+        self.assertIn("browser-agent-web-nine.vercel.app", api_server.ALLOWED_HOSTS)
+        self.assertIn("quiz-web-wzr7.onrender.com", api_server.ALLOWED_HOSTS)
+        self.assertIn("localhost", api_server.ALLOWED_HOSTS)
+        self.assertIn("127.0.0.1", api_server.ALLOWED_HOSTS)
+
+
 if __name__ == "__main__":
     unittest.main()
