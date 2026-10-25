@@ -46,6 +46,19 @@ class BrowserAgent:
         }
 
     async def run(self) -> bool:
+        try:
+            return await self._run_internal()
+        except Exception as error:
+            print()
+            print("AGENT FATAL ERROR:", error)
+            self.run_record["status"] = "error"
+            self.run_record["error"] = str(error)
+            if self.run_record.get("test_outcome") in (None, "unknown", "pending"):
+                self.run_record["test_outcome"] = "unhandled_exception"
+            await self.save_history()
+            return False
+
+    async def _run_internal(self) -> bool:
 
         print("Agent started")
 
