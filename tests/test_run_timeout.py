@@ -187,15 +187,28 @@ class RunTimeoutAndLifecycleTests(unittest.TestCase):
         agent._run_internal = raise_fatal
 
         with tempfile.TemporaryDirectory() as tmp:
-            with patch("os.makedirs"), patch("builtins.open", unittest.mock.mock_open()):
+            orig_cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
                 res = asyncio.run(agent.run())
                 self.assertFalse(res)
                 self.assertEqual(agent.run_record["status"], "error")
                 self.assertIn("Lost WebSocket connection", agent.run_record["error"])
                 self.assertEqual(agent.run_record["test_outcome"], "unhandled_exception")
 
+                history_path = Path("results/agent_history.json")
+                self.assertTrue(history_path.exists())
+                records = json.loads(history_path.read_text(encoding="utf-8"))
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0]["status"], "error")
+                self.assertEqual(records[0]["test_outcome"], "unhandled_exception")
+                self.assertEqual(records[0]["run_id"], agent.run_record["run_id"])
+                self.assertIn("Lost WebSocket connection", records[0]["error"])
+            finally:
+                os.chdir(orig_cwd)
 
     def test_run_agent_sets_global_state_started_at(self):
+        from datetime import datetime, timezone
         token = "f" * 64
         req = api_server.RunRequest(
             url="https://browser-agent-web-nine.vercel.app/test-quiz",
@@ -220,6 +233,23 @@ class RunTimeoutAndLifecycleTests(unittest.TestCase):
             self.assertEqual(res["status"], "running")
             self.assertIsNotNone(api_server.state_started_at)
             self.assertGreater(api_server.state_started_at, 0)
+
+            # Prove that state_started_at is used by reconcile_stale_record for local run
+            local_record = {
+                "run_id": res["run_id"],
+                "status": "running",
+                "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            # Active local run within timeout is NOT stale
+            self.assertFalse(api_server.reconcile_stale_record(local_record))
+
+            # If state_started_at is expired (> AGENT_RUN_TIMEOUT_SECONDS):
+            api_server.state_started_at = (
+                datetime.now(timezone.utc).timestamp() - (api_server.AGENT_RUN_TIMEOUT_SECONDS + 10)
+            )
+            # Active local run that exceeded timeout IS reconciled to abandoned
+            self.assertTrue(api_server.reconcile_stale_record(local_record))
+            self.assertEqual(local_record["status"], "abandoned")
 
     def test_reconcile_stale_record_keeps_active_remote_run(self):
         from datetime import datetime, timezone
