@@ -60,11 +60,12 @@ def _normalize_hostname(hostname: str) -> str:
 
     try:
         ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
         if not is_public_ip_address(host):
             raise UnsafePublicURL("Non-public IP addresses are not allowed.")
         return host
-    except ValueError:
-        pass
 
     try:
         host = host.encode("idna").decode("ascii").lower()
