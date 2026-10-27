@@ -26,7 +26,8 @@ from public_url_security import (
 async def block_non_web_schemes(route):
     """Validate every browser request, including redirects and subresources."""
     try:
-        await validate_public_web_url(route.request.url, require_https=False)
+        require_https = route.request.is_navigation_request()
+        await validate_public_web_url(route.request.url, require_https=require_https)
     except UnsafePublicURL as error:
         # A redirect or subresource must not bypass the initial URL policy.
         print(f"Blocked unsafe browser request: {route.request.url} ({error})")
