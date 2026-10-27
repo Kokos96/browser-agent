@@ -734,7 +734,7 @@ class BrowserAgent:
             # "start"/"начать"/"почати" variants require an exact label to
             # avoid clicking unrelated controls such as "Restart".
             if any(
-                re.search(rf"\\b{re.escape(phrase)}\\b", visible_text)
+                re.search(rf"\b{re.escape(phrase)}\b", visible_text)
                 for phrase in phrases
             ):
                 return element
