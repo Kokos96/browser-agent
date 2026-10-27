@@ -621,16 +621,25 @@ class QuizOrchestrator:
         self.run_record["submission_attempted"] = sub_result.submission_attempted
         self.run_record["submission_confirmed"] = sub_result.submission_confirmed
 
-        if sub_result.submit_control_not_found and not sub_result.submission_confirmed:
-            error_message = (
-                "Відповіді вибрано, але кнопку завершення або результат тесту "
-                "не знайдено. Завершення тесту не підтверджено."
-            )
+        if (
+            not sub_result.submission_confirmed
+            and not sub_result.awaiting_manual_submission
+        ):
+            if sub_result.submit_control_not_found:
+                error_message = (
+                    "Відповіді вибрано, але кнопку завершення або результат тесту "
+                    "не знайдено. Завершення тесту не підтверджено."
+                )
+            else:
+                error_message = (
+                    "Кнопку надсилання натиснуто, але видимий перехід до результату "
+                    "не підтверджено. Перевірте тест вручну."
+                )
             self._transition(WorkflowState.SUBMISSION_UNCONFIRMED)
             print("ERROR: " + error_message)
             self.run_record.update({
                 "status": "error",
-                "test_outcome": "submit_control_not_found",
+                "test_outcome": sub_result.test_outcome or "submission_unconfirmed",
                 "failure_stage": "submission",
                 "error": error_message,
             })
