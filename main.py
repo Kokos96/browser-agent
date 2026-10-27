@@ -3,7 +3,6 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
 
 # Support running directly from the repository checkout and in the Cloud Run image.
 SRC_DIR = Path(__file__).resolve().parent / "src"
@@ -16,13 +15,21 @@ from browser_agent.agent import BrowserAgent
 from browser_agent.browser import BrowserController
 from browser_agent.config import settings
 from browser_agent.llm import GeminiClient
-from public_url_security import PublicEgressProxy, UnsafePublicURL, validate_public_web_url
+from public_url_security import (
+    PublicEgressProxy,
+    UnsafePublicURL,
+    host_allowed_by_policy,
+    validate_public_web_url,
+)
 
 
 async def block_non_web_schemes(route):
-    """Block file:, javascript:, and other non-HTTP(S) network navigations."""
-    scheme = urlsplit(route.request.url).scheme.lower()
-    if scheme not in {"http", "https"}:
+    """Validate every browser request, including redirects and subresources."""
+    try:
+        await validate_public_web_url(route.request.url, require_https=False)
+    except UnsafePublicURL as error:
+        # A redirect or subresource must not bypass the initial URL policy.
+        print(f"Blocked unsafe browser request: {route.request.url} ({error})")
         await route.abort("blockedbyclient")
         return
     await route.continue_()
@@ -31,9 +38,21 @@ async def block_non_web_schemes(route):
 async def main() -> bool:
     """Run one browser session with validated HTTPS and guarded browser egress."""
     try:
-        await validate_public_web_url(settings.test_url, require_https=True)
+        target, _resolved_addresses = await validate_public_web_url(
+            settings.test_url, require_https=True
+        )
     except UnsafePublicURL as error:
         print(f"ERROR: target URL rejected by public HTTPS policy: {error}")
+        return False
+
+    access_mode = os.getenv("URL_POLICY_MODE", "public_https").strip().lower()
+    allowed_hosts = {
+        host.strip().lower()
+        for host in os.getenv("ALLOWED_TEST_HOSTS", "").split(",")
+        if host.strip()
+    }
+    if not host_allowed_by_policy(target.hostname, access_mode, allowed_hosts):
+        print("ERROR: target URL rejected by the configured strict allowlist policy.")
         return False
 
     # Each worker owns its own loopback-only proxy so it cannot inherit
