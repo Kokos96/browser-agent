@@ -461,6 +461,77 @@ class ProgressEventsAndSubmissionTests(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_manual_submission_is_not_reported_as_confirmed(self):
+        async def run_test():
+            quiz_state = {
+                "url": "https://example.com/quiz",
+                "title": "Quiz",
+                "text": "Question 1",
+                "elements": [
+                    {"id": 1, "tag": "button", "text": "Submit test"},
+                ],
+                "dom_fingerprint": "fp_quiz",
+            }
+            browser = MagicMock()
+            browser.click = AsyncMock()
+            browser.wait = AsyncMock()
+            browser.inspect = AsyncMock(return_value=quiz_state)
+
+            result = await SubmissionAndResultAgent().submit_and_verify(
+                browser=browser,
+                state=quiz_state,
+                auto_submit=False,
+            )
+
+            self.assertTrue(result.awaiting_manual_submission)
+            self.assertFalse(result.submission_attempted)
+            self.assertFalse(result.submission_confirmed)
+            self.assertEqual(result.test_outcome, "awaiting_manual_submission")
+            browser.click.assert_not_awaited()
+
+        asyncio.run(run_test())
+
+    def test_click_without_observable_result_transition_is_unconfirmed(self):
+        async def run_test():
+            quiz_state = {
+                "url": "https://example.com/quiz",
+                "title": "Quiz",
+                "text": "Question 1: Choose one answer",
+                "elements": [
+                    {
+                        "id": 1, "tag": "input", "type": "radio", "name": "q1",
+                        "text": "Option A", "value": "a",
+                        "question_heading": "Question 1", "container_id": "q1",
+                    },
+                    {
+                        "id": 2, "tag": "input", "type": "radio", "name": "q1",
+                        "text": "Option B", "value": "b",
+                        "question_heading": "Question 1", "container_id": "q1",
+                    },
+                    {"id": 3, "tag": "button", "text": "Submit test"},
+                ],
+                "dom_fingerprint": "same-quiz",
+            }
+            browser = MagicMock()
+            browser.click = AsyncMock()
+            browser.wait = AsyncMock()
+            browser.inspect = AsyncMock(return_value=quiz_state)
+
+            result = await SubmissionAndResultAgent().submit_and_verify(
+                browser=browser,
+                state=quiz_state,
+                auto_submit=True,
+                wait_ms=1,
+            )
+
+            self.assertTrue(result.submission_attempted)
+            self.assertFalse(result.submission_confirmed)
+            self.assertFalse(result.result_page_captured)
+            self.assertEqual(result.test_outcome, "submission_unconfirmed")
+            browser.click.assert_awaited_once_with(3)
+
+        asyncio.run(run_test())
+
     def test_missing_submit_button_and_no_score_is_marked_as_error(self):
         async def run_test():
             quiz_state_no_submit = {
