@@ -43,6 +43,13 @@ from browser_agent.models import (
 class StartPageDetectionTests(unittest.TestCase):
     """Category A: Start-page detection and ranking across UK/RU/EN."""
 
+    def test_recognizes_common_take_the_quiz_button(self):
+        ranked = NavigationAndLaunchAgent.rank_start_controls([
+            {"id": 11, "tag": "button", "text": "Take the Quiz"},
+            {"id": 12, "tag": "button", "text": "Subscribe to continue"},
+        ])
+        self.assertEqual([candidate.element_id for candidate in ranked], [11])
+
     def test_ranks_button_link_and_role_button_across_languages(self):
         elements = [
             {"id": 1, "tag": "a", "text": "Головна", "in_nav_or_footer": True},
@@ -158,6 +165,19 @@ class StateDetectorAndExtractorTests(unittest.TestCase):
         self.assertEqual(classification.category, PageCategory.LANDING_PAGE)
         self.assertEqual(classification.detected_questions_count, 0)
         self.assertEqual(classification.start_candidates[0].element_id, 46)
+
+    def test_subscription_wall_is_classified_as_access_gate(self):
+        state = {
+            "url": "https://example.com/quiz",
+            "title": "Premium Quiz",
+            "text": "This quiz is available to subscribers. Subscription required to continue.",
+            "elements": [
+                {"id": 1, "tag": "button", "text": "Subscribe to continue"}
+            ],
+        }
+        classification = self.detector.classify(state)
+        self.assertEqual(classification.category, PageCategory.ACCESS_GATE)
+        self.assertEqual(classification.recommended_action, "stop_access_required")
 
     def test_unknown_page_with_many_buttons_and_no_quiz_controls_is_unknown_page(self):
         elements = [
