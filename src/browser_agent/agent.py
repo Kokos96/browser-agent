@@ -540,7 +540,7 @@ class BrowserAgent:
     def extract_score(result_text: str) -> str | None:
         """Extract an explicit score or correct-answer count; never infer one."""
         patterns = (
-            r"(?:ваш результат(?: тесту)?|результат тесту|your score|test score|"
+            r"(?:ваш результат(?: тесту)?|результат тесту|your score|test score|you scored|"
             r"ви набрали|вы набрали|score)\s*[:：—-]?\s*"
             r"(\d+)\s*(?:/|із|з|из|out of|of)\s*(\d+)",
             r"(?:правильних відповідей|правильні відповіді|правильных ответов|"
