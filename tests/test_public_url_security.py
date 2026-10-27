@@ -1,7 +1,9 @@
 import asyncio
 import socket
 import unittest
+from unittest.mock import AsyncMock, patch
 
+import main as agent_main
 from public_url_security import (
     PublicEgressProxy,
     UnsafePublicURL,
@@ -132,6 +134,69 @@ class PublicURLPolicyTests(unittest.TestCase):
                 await proxy.close()
 
         asyncio.run(scenario())
+
+
+
+class BrowserRequestGuardTests(unittest.TestCase):
+    def test_unsafe_redirect_or_subresource_is_aborted(self):
+        class Request:
+            url = "http://127.0.0.1:8080/admin"
+
+        class Route:
+            request = Request()
+
+            def __init__(self):
+                self.aborted = False
+                self.continued = False
+
+            async def abort(self, reason):
+                self.aborted = True
+
+            async def continue_(self):
+                self.continued = True
+
+        async def scenario():
+            route = Route()
+            with patch(
+                "main.validate_public_web_url",
+                new=AsyncMock(side_effect=UnsafePublicURL("private address")),
+            ):
+                await agent_main.block_non_web_schemes(route)
+            return route
+
+        route = asyncio.run(scenario())
+        self.assertTrue(route.aborted)
+        self.assertFalse(route.continued)
+
+    def test_public_https_subresource_is_continued(self):
+        class Request:
+            url = "https://cdn.example.org/static/app.js"
+
+        class Route:
+            request = Request()
+
+            def __init__(self):
+                self.aborted = False
+                self.continued = False
+
+            async def abort(self, reason):
+                self.aborted = True
+
+            async def continue_(self):
+                self.continued = True
+
+        async def scenario():
+            route = Route()
+            with patch(
+                "main.validate_public_web_url",
+                new=AsyncMock(return_value=(parse_public_web_url(Request.url), ["93.184.216.34"])),
+            ):
+                await agent_main.block_non_web_schemes(route)
+            return route
+
+        route = asyncio.run(scenario())
+        self.assertFalse(route.aborted)
+        self.assertTrue(route.continued)
 
 
 if __name__ == "__main__":
