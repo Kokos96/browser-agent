@@ -297,8 +297,8 @@ class BrowserAgent:
 
         if not self.is_usable_question_plan(total_questions, plan.selections):
             error_message = (
-                "Gemini did not identify any answerable quiz questions. "
-                "No answers were selected and the test was not submitted."
+                "ШІ не розпізнав жодного питання тесту. "
+                "Відповіді не вибиралися, тест не відправлявся."
             )
             print("ERROR: " + error_message)
             self.run_record.update({
@@ -328,8 +328,8 @@ class BrowserAgent:
 
         if not valid_selections:
             error_message = (
-                "Gemini returned a plan, but none of its answer element IDs "
-                "matched the current page."
+                "ШІ сформував план, але жоден елемент відповіді не збігається "
+                "з поточною сторінкою."
             )
             print("ERROR: " + error_message)
             self.run_record.update({
@@ -371,11 +371,12 @@ class BrowserAgent:
                 if question_context
                 else f"обрано «{answer_label}»"
             )
-            print(f"Питання {selection.question_number}/{total_questions}: {description}")
+            print(f"Опрацьовую питання {selection.question_number}/{total_questions}: {description}")
 
             try:
                 await self.browser.select(selection.element_id)
                 selected_count += 1
+                print(f"Відповідь вибрано: Питання {selection.question_number}/{total_questions}: {description}")
                 self.history.append({
                     "question": selection.question_number,
                     "element_id": selection.element_id,
@@ -471,8 +472,8 @@ class BrowserAgent:
                 return True
 
             error_message = (
-                "Answers were selected, but no submit control or visible "
-                "test result was found. Completion cannot be confirmed."
+                "Відповіді вибрано, але кнопку завершення або результат тесту "
+                "не знайдено. Завершення тесту не підтверджено."
             )
             print("ERROR: " + error_message)
             self.run_record.update({
