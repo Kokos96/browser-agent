@@ -22,7 +22,8 @@ Keep any local edits and backup files. Do not use git reset --hard as a shortcut
 - Distributed stale run reconciliation (`reconcile_stale_record`) with Firestore and local fallback.
 - Multi-instance status routing via `/api/status`.
 - Top-level exception interception in `BrowserAgent.run()`, ensuring terminal `error` records are always saved.
-- Controlled test stand host allowlist (`quiz-web-wzr7.onrender.com` and `browser-agent-web-nine.vercel.app`).
+- Public HTTPS URL policy by default (`URL_POLICY_MODE=public_https`), with optional exact-host restriction (`URL_POLICY_MODE=strict_allowlist`).
+- API-side URL/DNS validation plus a local DNS-pinning egress proxy for Playwright HTTP(S) traffic, including redirects and subresources.
 - Autonomous QA & Self-Healing loop framework (`src/browser_agent/autonomous_qa/`).
 
 ## 3. Deploy to Cloud Run (Manual Release Step)
@@ -38,12 +39,13 @@ gcloud run deploy browser-agent \
   --source . \
   --region europe-west1 \
   --no-cpu-throttling \
+  --update-env-vars=URL_POLICY_MODE=public_https \
   --min-instances 0 \
   --max-instances 1 \
   --timeout 300
 ~~~
 
-Verify that existing secret-backed environment variables (`API_TOKEN`, `GEMINI_API_KEY`, `ALLOWED_TEST_HOSTS`) remain configured in Cloud Run after deployment. Never print or paste secret values.
+Verify that existing environment variables remain configured in Cloud Run after deployment. `URL_POLICY_MODE=public_https` allows arbitrary syntactically valid public HTTPS hosts after DNS validation; `URL_POLICY_MODE=strict_allowlist` restricts targets to exact hosts in `ALLOWED_TEST_HOSTS`. Keep SSRF protections enabled in both modes. Verify `API_TOKEN` and `GEMINI_API_KEY` remain configured, but never print or paste secret values.
 
 Check public health:
 
