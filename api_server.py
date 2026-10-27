@@ -14,6 +14,12 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 
+from public_url_security import (
+    UnsafePublicURL,
+    host_allowed_by_policy,
+    validate_public_web_url,
+)
+
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN", "")
@@ -47,7 +53,10 @@ ALLOWED_HOSTS = {
     ).split(",")
     if host.strip()
 }
-
+# Public HTTPS is the default. Restrictive deployments must opt in explicitly.
+URL_POLICY_MODE = os.getenv("URL_POLICY_MODE", "public_https").strip().lower()
+if URL_POLICY_MODE not in {"public_https", "strict_allowlist"}:
+    URL_POLICY_MODE = "invalid"
 app = FastAPI(title="Browser Agent API")
 
 app.add_middleware(
@@ -62,6 +71,7 @@ app.add_middleware(
         "ngrok-skip-browser-warning",
     ],
 )
+
 
 DEFAULT_AGENT_RUN_TIMEOUT_SECONDS = 180
 AGENT_RUN_TIMEOUT_SECONDS = int(
@@ -634,18 +644,23 @@ async def run_agent(
         raise HTTPException(status_code=400, detail="Unsupported Gemini model")
 
     url = str(request.url)
-    parsed = urlparse(url)
-
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.hostname.lower() not in ALLOWED_HOSTS
-        or parsed.username
-        or parsed.password
-    ):
+    try:
+        target, _resolved_addresses = await validate_public_web_url(
+            url, require_https=True
+        )
+    except UnsafePublicURL as exc:
         raise HTTPException(
             status_code=400,
-            detail="URL is not in the allowed HTTPS hosts",
+            detail=f"URL is not a safe public HTTPS target: {exc}",
+        ) from exc
+
+    if not host_allowed_by_policy(target.hostname, URL_POLICY_MODE, ALLOWED_HOSTS):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This public HTTPS host is not permitted by the configured "
+                "strict allowlist policy."
+            ),
         )
 
     async with lock:
@@ -668,6 +683,7 @@ async def run_agent(
         env["HEADLESS"] = "true"
         env["DEVICE_ID"] = device_id
         env["RUN_ID"] = run_key
+        env["URL_POLICY_MODE"] = URL_POLICY_MODE
         if request.model:
             env["GEMINI_MODEL"] = request.model
 

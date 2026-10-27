@@ -23,6 +23,7 @@
 - Історія за анонімним ідентифікатором пристрою; Firestore за наявності конфігурації проєкту.
 - Збереження stdout-логів, стану сторінки й діагностики невдалого запуску.
 - Автоматичні перевірки Python-синтаксису та unit-тести через GitHub Actions.
+- Політика публічних HTTPS-адрес із DNS/IP-перевіркою та локальним egress-проксі для запитів Chromium.
 
 ## Архітектура
 
@@ -32,6 +33,8 @@ flowchart LR
     API --> Worker["Worker process<br/>main.py"]
     Worker --> Agent["BrowserAgent"]
     Agent --> Browser["Playwright / Chromium"]
+    Browser --> Proxy["Public URL egress proxy"]
+    Proxy --> Internet["Validated public HTTP(S) hosts"]
     Agent --> Gemini["Gemini API"]
     API --> History["Firestore / local JSON"]
     Agent --> History
@@ -45,6 +48,7 @@ flowchart LR
 .
 ├── api_server.py              # HTTP API, запуск worker, статус і історія
 ├── main.py                    # Точка входу окремого процесу агента
+├── public_url_security.py     # URL validation and DNS-pinning egress proxy
 ├── src/
 │   └── browser_agent/
 │       ├── agent.py           # Цикл агента, дії та запис результатів
@@ -55,6 +59,7 @@ flowchart LR
 │       └── prompts.py         # Системний prompt та форматування запиту
 ├── tests/
 │   ├── test_device_history.py # Ізоляція історії та збереження логів
+│   ├── test_public_url_security.py # URL policy and proxy security
 │   └── test_run_status.py     # Відповідність exit code результату агента
 ├── docs/
 │   └── architecture.md        # Компоненти, схема та обмеження
@@ -73,7 +78,7 @@ flowchart LR
 
 Потрібні Python 3.10+ і доступ до Gemini API.
 
-~~~bash
+~~~
 git clone https://github.com/Kokos96/browser-agent.git
 cd browser-agent
 
@@ -89,13 +94,13 @@ cp .env.example .env
 
 Запуск worker напряму:
 
-~~~bash
+~~~
 python main.py
 ~~~
 
 Для запуску HTTP API локально задай окремий API_TOKEN у своєму .env, після чого виконай:
 
-~~~bash
+~~~
 uvicorn api_server:app --host 127.0.0.1 --port 8000
 ~~~
 
@@ -116,9 +121,22 @@ uvicorn api_server:app --host 127.0.0.1 --port 8000
 | API_TOKEN | Спільний токен для захисту API в поточному demo-сценарії |
 | GOOGLE_CLOUD_PROJECT | Вмикає збереження історії у Firestore, якщо service account має доступ |
 | FRONTEND_ORIGINS | Дозволені origin-и вебклієнта, розділені комами |
-| ALLOWED_TEST_HOSTS | Дозволені HTTPS-host-и цільових тестів |
+| URL_POLICY_MODE | `public_https` (default) або `strict_allowlist` |
+| ALLOWED_TEST_HOSTS | Точні хости лише для явного режиму `strict_allowlist` |
 
 Шаблон значень міститься у [.env.example](.env.example). Не вставляй реальні ключі у цей файл.
+
+## Політика URL та мережевий захист
+
+За замовчуванням `URL_POLICY_MODE=public_https`: API приймає синтаксично коректні публічні HTTPS-цілі без потреби додавати кожен новий домен у конфігурацію. Це дозволяє пробувати різні публічні сайти з тестами.
+
+`URL_POLICY_MODE=strict_allowlist` вмикає сумісний суворий режим, де допускаються лише точні hostname-и з `ALLOWED_TEST_HOSTS`. Це додатковий обмежувальний режим, а не засіб захисту від SSRF сам по собі.
+
+Перед запуском URL перевіряється на HTTPS, коректний hostname, відсутність вбудованих облікових даних, допустимий порт і публічні DNS/IP-адреси. Chromium використовує локальний loopback-only egress proxy, який перевіряє кожен outbound HTTP(S) destination та встановлює з’єднання з уже перевіреною IP-адресою. Запити до localhost, приватних, loopback, link-local, reserved та metadata адрес блокуються. Схеми, відмінні від HTTP(S), блокуються на рівні браузерного маршруту.
+
+Публічний URL сам по собі не гарантує, що сайт можна пройти автоматично: CAPTCHA, login walls, rate limits, нестандартні форми та динамічні компоненти можуть блокувати виконання. Агент має фіксувати ці випадки як обмеження/помилки, а не заявляти успіх без фактично отриманого результату.
+
+Жодний application-level proxy не замінює мережеву egress-політику хмарної інфраструктури. Для публічного production-сервісу слід продовжувати використовувати least-privilege service account, не надавати браузеру секрети Cloud Run, а за вимогами вищої гарантії — додати окремі egress rules на рівні інфраструктури.
 
 ## API
 
@@ -145,8 +163,8 @@ uvicorn api_server:app --host 127.0.0.1 --port 8000
 
 ## Перевірки
 
-~~~bash
-python -m py_compile api_server.py main.py src/browser_agent/*.py
+~~~
+python -m py_compile api_server.py main.py public_url_security.py src/browser_agent/*.py
 python -m unittest discover -s tests -v
 ~~~
 
@@ -157,7 +175,7 @@ GitHub Actions запускає ці перевірки на push і pull reques
 - Поточний API_TOKEN — спільний demo-токен, а не повноцінна система користувацької автентифікації. Не роздавай його широкій аудиторії.
 - API поки запускає лише один browser worker одночасно; другий паралельний запуск відхиляється.
 - Скриншоти, логи та текст сторінки можуть містити персональні або навчальні дані. Перевіряй їх перед передаванням іншим.
-- Обмежуй цільові URL через ALLOWED_TEST_HOSTS і запускай автоматизацію лише на ресурсах, які маєш право тестувати.
+- Автоматизуй лише сайти, які маєш право тестувати; не намагайся обходити CAPTCHA, paywalls, автентифікацію чи інші обмеження доступу.
 - У репозиторії поки не визначено окрему LICENSE; це потрібно вирішити перед позиціонуванням як open-source проєкту.
 
 ## Розгортання

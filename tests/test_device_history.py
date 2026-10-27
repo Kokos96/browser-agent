@@ -232,15 +232,29 @@ class DeviceHistoryTests(unittest.TestCase):
             self.assertIsNone(records[0]["score"])
 
 
-    def test_allowed_hosts_contains_controlled_test_stand(self):
-        self.assertIn("browser-agent-web-nine.vercel.app", api_server.ALLOWED_HOSTS)
-        self.assertIn("quiz-web-wzr7.onrender.com", api_server.ALLOWED_HOSTS)
-        self.assertNotIn("localhost", api_server.ALLOWED_HOSTS)
-        self.assertNotIn("127.0.0.1", api_server.ALLOWED_HOSTS)
+    def test_public_https_policy_accepts_external_hosts_by_default(self):
+        self.assertEqual(api_server.URL_POLICY_MODE, "public_https")
+        self.assertTrue(
+            api_server.host_allowed_by_policy("www.giggleus.com", api_server.URL_POLICY_MODE, api_server.ALLOWED_HOSTS)
+        )
+        self.assertTrue(
+            api_server.host_allowed_by_policy("example.org", api_server.URL_POLICY_MODE, api_server.ALLOWED_HOSTS)
+        )
 
-    def test_allowed_hosts_rejects_untrusted_and_local_targets_by_default(self):
-        self.assertNotIn("evil.com", api_server.ALLOWED_HOSTS)
-        self.assertNotIn("internal.corp", api_server.ALLOWED_HOSTS)
+    def test_strict_allowlist_mode_can_restrict_hosts_when_explicitly_enabled(self):
+        self.assertTrue(
+            api_server.host_allowed_by_policy(
+                "browser-agent-web-nine.vercel.app", "strict_allowlist", api_server.ALLOWED_HOSTS
+            )
+        )
+        self.assertFalse(
+            api_server.host_allowed_by_policy(
+                "www.giggleus.com", "strict_allowlist", api_server.ALLOWED_HOSTS
+            )
+        )
+        self.assertFalse(
+            api_server.host_allowed_by_policy("localhost", "strict_allowlist", api_server.ALLOWED_HOSTS)
+        )
 
 
 if __name__ == "__main__":
