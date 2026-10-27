@@ -13,6 +13,23 @@ from browser_agent.agent import BrowserAgent
 
 
 class RunTimeoutAndLifecycleTests(unittest.TestCase):
+    def test_empty_quiz_plan_is_not_usable(self):
+        self.assertFalse(BrowserAgent.is_usable_question_plan(0, []))
+        self.assertFalse(BrowserAgent.is_usable_question_plan(8, []))
+        self.assertFalse(BrowserAgent.is_usable_question_plan(0, [object()]))
+
+    def test_nonempty_quiz_plan_is_usable(self):
+        self.assertTrue(BrowserAgent.is_usable_question_plan(1, [object()]))
+
+    def test_extract_score_supports_common_localized_formats(self):
+        self.assertEqual(BrowserAgent.extract_score("Ваш результат: 8 / 20"), "8/20")
+        self.assertEqual(BrowserAgent.extract_score("Правильних відповідей: 7 з 10"), "7/10")
+        self.assertEqual(BrowserAgent.extract_score("You scored 9 out of 12"), "9/12")
+
+    def test_extract_score_does_not_invent_a_result(self):
+        self.assertIsNone(BrowserAgent.extract_score("The test has 20 questions."))
+        self.assertIsNone(BrowserAgent.extract_score(""));
+
     def test_record_run_start_creates_initial_running_record(self):
         token = "a" * 64
         device_id = api_server.device_owner_id(token)
