@@ -679,48 +679,68 @@ class BrowserAgent:
         # Start test
         # ---------------------------------------------
 
-        for element in elements:
+        start_element = self.find_start_button(elements)
 
-            tag = (
-                element.get("tag")
-                or ""
-            ).lower()
+        if start_element is not None:
+            print(
+                "Browser: starting test",
+                f"(element {start_element['id']}: "
+                f"{start_element.get('text') or start_element.get('aria_label') or ''})"
+            )
 
-            text = (
-                element.get("text")
-                or ""
-            ).strip().lower()
-
-            if tag != "button":
-                continue
-
-            phrases = [
-                "почати тест",
-                "почати",
-                "start test",
-                "start",
-            ]
-
-            if any(
-                phrase in text
-                for phrase in phrases
-            ):
-
-                print(
-                    "Browser: starting test"
-                )
-
-                await self.browser.click(
-                    element["id"]
-                )
-
-                await self.browser.wait(
-                    1000
-                )
-
-                return True
+            await self.browser.click(start_element["id"])
+            await self.browser.wait(1000)
+            return True
 
         return False
+
+    @staticmethod
+    def find_start_button(elements: list[dict]) -> dict | None:
+        """Find a likely start-test control across Ukrainian, Russian and English UIs."""
+        phrases = (
+            "розпочати тест",
+            "почати тест",
+            "начать тест",
+            "старт теста",
+            "запустити тест",
+            "start the test",
+            "start test",
+            "start quiz",
+            "begin test",
+            "begin quiz",
+            "пройти тест",
+            "розпочати",
+            "почати",
+            "начать",
+        )
+
+        for element in elements:
+            tag = (element.get("tag") or "").strip().lower()
+            role = (element.get("role") or "").strip().lower()
+            if tag not in {"button", "a"} and role != "button":
+                continue
+
+            visible_text = re.sub(
+                r"\\s+",
+                " ",
+                " ".join(
+                    str(element.get(key) or "")
+                    for key in ("text", "aria_label", "title")
+                ),
+            ).strip().lower()
+
+            if not visible_text:
+                continue
+
+            # Longer phrases are matched as part of the label; the short
+            # "start"/"начать"/"почати" variants require an exact label to
+            # avoid clicking unrelated controls such as "Restart".
+            if any(phrase in visible_text for phrase in phrases[:-2]):
+                return element
+            if visible_text in {"розпочати", "почати", "начать"}:
+                return element
+
+        return None
 
     @staticmethod
     def find_by_name(
