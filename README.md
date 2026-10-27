@@ -1,183 +1,134 @@
-# Browser Automation Agent
+# Browser Automation Agent — State-Aware Multi-Agent Quiz Orchestrator
 
-[![CI](https://github.com/Kokos96/browser-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/Kokos96/browser-agent/actions/workflows/validate.yml)
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
-![Playwright](https://img.shields.io/badge/Browser-Playwright-2EAD33)
+A modular, state-aware browser automation system built with **Playwright (Chromium)**, **FastAPI**, and **Google Gemini** (`google-genai`). Designed to navigate, classify, extract, plan, execute, and verify public web-based quizzes and tests across diverse page layouts without page-specific hardcoding.
 
-**Browser Automation Agent** — асинхронний Python-агент для автоматизації браузерних сценаріїв. Він використовує Playwright для взаємодії зі сторінкою, Gemini для побудови структурованого плану дій і FastAPI для віддаленого запуску та перегляду стану.
+---
 
-Проєкт розгортається як два компоненти: вебклієнт у окремому репозиторії та API/worker у цьому репозиторії.
+## 1. High-Level Architecture Overview
 
-**Демо інтерфейсу:** [відкрити Browser Agent](https://browser-agent-web-nine.vercel.app)
+Instead of treating every target URL as an already-opened single-page form, the system uses a **7-agent coordinator + specialist architecture**:
 
-> **Стан проєкту:** MVP у розробці. Базовий сценарій запуску та збереження історії реалізований; стабільність наскрізного виконання і повнота діагностики ще перевіряються. Статус завершення процесу не є доказом успішного результату цільового тесту.
+```mermaid
+flowchart TD
+    A["Agent A: QuizOrchestrator<br/>(Finite-State Machine & Lifecycle)"]
+    B["Agent B: NavigationAndLaunchAgent<br/>(Profile Bootstrap & Start CTA Ranking)"]
+    C["Agent C: QuizPageStateDetector<br/>(Deterministic Page Classifier)"]
+    D["Agent D: QuizQuestionExtractor<br/>(Structured Question & Option Extractor)"]
+    E["Agent E: AnswerPlanningAgent<br/>(Token-Efficient Gemini Planner & Validator)"]
+    F["Agent F: BrowserActionExecutor<br/>(DOM Re-Resolution, Overlay Recovery & Selection Verification)"]
+    G["Agent G: SubmissionAndResultAgent<br/>(Submit Control & Explicit Score Extractor)"]
 
-## Можливості
+    A --> C
+    A --> B
+    C --> D
+    C --> B
+    A --> D
+    A --> E
+    A --> F
+    A --> G
+```
 
-- Керування браузером через Playwright і Chromium.
-- Інспекція URL, заголовка, тексту сторінки й інтерактивних елементів.
-- Автоматичне заповнення відомих полів профілю перед стартом сценарію.
-- Структурований план дій від Gemini; виконуються лише дії, прив’язані до знайдених елементів.
-- Опційне передавання скриншота сторінки моделі.
-- FastAPI endpoint-и для запуску агента, перевірки статусу та читання історії.
-- Історія за анонімним ідентифікатором пристрою; Firestore за наявності конфігурації проєкту.
-- Збереження stdout-логів, стану сторінки й діагностики невдалого запуску.
-- Автоматичні перевірки Python-синтаксису та unit-тести через GitHub Actions.
-- Політика публічних HTTPS-адрес із DNS/IP-перевіркою та локальним egress-проксі для запитів Chromium.
+---
 
-## Архітектура
+## 2. Specialist Agents & Responsibilities
 
-~~~mermaid
-flowchart LR
-    UI["Web client"] --> API["FastAPI<br/>api_server.py"]
-    API --> Worker["Worker process<br/>main.py"]
-    Worker --> Agent["BrowserAgent"]
-    Agent --> Browser["Playwright / Chromium"]
-    Browser --> Proxy["Public URL egress proxy"]
-    Proxy --> Internet["Validated public HTTP(S) hosts"]
-    Agent --> Gemini["Gemini API"]
-    API --> History["Firestore / local JSON"]
-    Agent --> History
-~~~
+| Agent | Class & Module | Responsibility |
+| :--- | :--- | :--- |
+| **Agent A** | `QuizOrchestrator` (`src/browser_agent/agents/orchestrator.py`) | Top-level finite-state machine, retry/timeout budgets, structured `ProgressEvent` emission, multi-page loop coordination, and atomic history persistence (`results/agent_history.json` + Firestore). |
+| **Agent B** | `NavigationAndLaunchAgent` (`src/browser_agent/agents/navigation_agent.py`) | Fills optional profile fields (`surname`, `name`, `grp`/`group`), ranks start-test CTAs across Ukrainian, Russian, and English (`Почати тест`, `Розпочати тест`, `Пройти тест`, `Начать тест`, `Start quiz`, `Begin test`, `Take the test`), rejects non-start buttons (`Restart`, `Share`, `Login`, `Subscribe`, ` заново`), and verifies post-click DOM transitions. |
+| **Agent C** | `QuizPageStateDetector` (`src/browser_agent/agents/state_detector.py`) | Deterministically classifies the current DOM into `LANDING_PAGE`, `ACTIVE_QUIZ`, `LOADING_STATE`, `RESULT_PAGE`, `ACCESS_GATE`, `AUTH_REQUIRED`, `CAPTCHA_REQUIRED`, or `UNKNOWN_PAGE` with explicit confidence and evidence before any LLM call. |
+| **Agent D** | `QuizQuestionExtractor` (`src/browser_agent/agents/question_extractor.py`) | Groups answer controls by question container (`fieldset`, `[role=radiogroup]`, `.quiz-question`, heading proximity), extracts radio buttons, checkboxes, `<select>` dropdowns, and custom button/card options, records `locator_hint` metadata, and identifies `next_control_id` and `submit_control_id`. |
+| **Agent E** | `AnswerPlanningAgent` (`src/browser_agent/agents/answer_planner.py`) | Enforces the **Zero-Question Gate** (never calls Gemini if 0 questions are extracted), constructs compact structured prompts containing only extracted questions and options, enforces `max_llm_calls` and fingerprint deduplication, and validates all returned `BatchSelection` items against real DOM options. |
+| **Agent F** | `BrowserActionExecutor` (`src/browser_agent/agents/action_executor.py`) | Executes validated answer selections one question at a time, re-resolves shifted DOM element IDs via `locator_hint`, dismisses pointer-intercepting overlays (`Escape` + visible close buttons), verifies DOM selection state (`verify_selection`), and emits per-question progress events (`question_started`, `answer_selected`, `answer_selection_failed`). |
+| **Agent G** | `SubmissionAndResultAgent` (`src/browser_agent/agents/submission_agent.py`) | Distinguishes `answers_selected`, `submission_attempted`, `submission_confirmed`, `awaiting_manual_submission`, `result_page_captured`, `score_captured`, and `submit_control_not_found`. Extracts explicit scores (`8/10`, `8 з 10`, `8 out of 10`) and never fabricates results. |
 
-Подробиці компонентів і життєвого циклу — у [docs/architecture.md](docs/architecture.md).
+---
 
-## Структура репозиторію
+## 3. Orchestrator Finite-State Machine (`WorkflowState`)
 
-~~~text
-.
-├── api_server.py              # HTTP API, запуск worker, статус і історія
-├── main.py                    # Точка входу окремого процесу агента
-├── public_url_security.py     # URL validation and DNS-pinning egress proxy
-├── src/
-│   └── browser_agent/
-│       ├── agent.py           # Цикл агента, дії та запис результатів
-│       ├── browser.py         # Playwright controller
-│       ├── config.py          # Налаштування з environment
-│       ├── llm.py             # Gemini client та structured output
-│       ├── models.py          # Схеми запитів і відповідей моделі
-│       └── prompts.py         # Системний prompt та форматування запиту
-├── tests/
-│   ├── test_device_history.py # Ізоляція історії та збереження логів
-│   ├── test_public_url_security.py # URL policy and proxy security
-│   └── test_run_status.py     # Відповідність exit code результату агента
-├── docs/
-│   └── architecture.md        # Компоненти, схема та обмеження
-├── .github/workflows/
-│   └── validate.yml           # CI-перевірки
-├── Dockerfile
-├── requirements.txt
-├── pyproject.toml
-├── .env.example
-└── DEPLOYMENT.md
-~~~
+```mermaid
+stateDiagram-v2
+    [*] --> INITIALIZING
+    INITIALIZING --> NAVIGATING
+    NAVIGATING --> DETECTING_PAGE_STATE
+    DETECTING_PAGE_STATE --> STARTING_TEST : LANDING_PAGE (Start CTA found)
+    STARTING_TEST --> WAITING_FOR_QUIZ
+    WAITING_FOR_QUIZ --> DETECTING_PAGE_STATE
+    DETECTING_PAGE_STATE --> EXTRACTING_QUESTIONS : ACTIVE_QUIZ
+    DETECTING_PAGE_STATE --> CAPTCHA_REQUIRED : CAPTCHA detected
+    DETECTING_PAGE_STATE --> ACCESS_REQUIRED : Auth / Access gate
+    EXTRACTING_QUESTIONS --> QUESTION_DETECTION_FAILED : 0 questions extracted
+    EXTRACTING_QUESTIONS --> PLANNING_ANSWERS : >= 1 questions extracted
+    PLANNING_ANSWERS --> QUESTION_DETECTION_FAILED : Empty/invalid LLM plan
+    PLANNING_ANSWERS --> SELECTING_ANSWERS : ValidatedAnswerPlan ready
+    SELECTING_ANSWERS --> ANSWERS_NOT_SELECTABLE : 0 answers selected
+    SELECTING_ANSWERS --> ADVANCING_PAGE : Next button present (multi-step quiz)
+    ADVANCING_PAGE --> EXTRACTING_QUESTIONS
+    SELECTING_ANSWERS --> SUBMITTING : All visible questions answered
+    SUBMITTING --> SUBMISSION_UNCONFIRMED : Submit control missing & no score
+    SUBMITTING --> VERIFYING_RESULT : Submit clicked or score visible
+    VERIFYING_RESULT --> COMPLETED
+```
 
-Згенеровані скриншоти та файли історії належать до папок screenshots/ і results/; їх не слід комітити, оскільки вони можуть містити вміст вебсторінок.
+---
 
-## Як запустити локально
+## 4. Core Data Schemas (`src/browser_agent/models.py`)
 
-Потрібні Python 3.10+ і доступ до Gemini API.
+- **`PageClassification`**: `category` (`PageCategory`), `confidence` (`0.0–1.0`), `evidence` (`list[str]`), `recommended_action`, `detected_questions_count`, `start_candidates`.
+- **`ExtractedQuestion` & `ExtractedOption`**: `question_id`, `question_number`, `prompt`, `question_type` (`single_choice`, `multiple_choice`, `select_dropdown`), `options` (`option_id`, `element_id`, `text`, `value`, `control_type`, `checked`, `locator_hint`).
+- **`ValidatedAnswerPlan` & `ValidatedAnswerAction`**: Validated mapping from each `ExtractedQuestion` to a verified `element_id`, `option_text`, `option_value`, `control_type`, and `locator_hint`.
+- **`BatchExecutionResult`**: `results` (`list[QuestionActionResult]`), `answers_selected`, `answers_failed`, `questions_unanswered`.
+- **`SubmissionResult`**: `submission_attempted`, `submission_confirmed`, `submit_control_id`, `submit_control_not_found`, `awaiting_manual_submission`, `result_page_captured`, `score_captured`, `score_text`, `test_outcome`, `evidence`.
 
-~~~
-git clone https://github.com/Kokos96/browser-agent.git
-cd browser-agent
+---
 
-python -m venv .venv
-source .venv/bin/activate       # Windows PowerShell: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m playwright install chromium
+## 5. Structured Progress Event Schema (`ProgressEvent`)
 
-cp .env.example .env
-~~~
+Every lifecycle transition and per-question action emits a `ProgressEvent` stored in `run_record["events"]` and streamed to stdout for live UI rendering:
 
-Відредагуй .env: щонайменше задай GEMINI_API_KEY, потрібний TEST_URL і поля профілю. Не коміть .env та не вставляй секрети в issues, скриншоти або README.
+```json
+{
+  "event_type": "answer_selected",
+  "workflow_state": "SELECTING_ANSWERS",
+  "timestamp": "2026-10-27T16:35:00+00:00",
+  "message": "Відповідь вибрано: Питання 1/3: 1. Який протокол працює на транспортному рівні моделі OSI? — обрано «TCP»",
+  "question_index": 1,
+  "total_questions": 3,
+  "question_text": "1. Який протокол працює на транспортному рівні моделі OSI?",
+  "selected_option": "TCP",
+  "status": "selected",
+  "metadata": {}
+}
+```
 
-Запуск worker напряму:
+---
 
-~~~
-python main.py
-~~~
+## 6. Token Efficiency Strategy
 
-Для запуску HTTP API локально задай окремий API_TOKEN у своєму .env, після чого виконай:
+1. **Zero-Question Gate**: `QuizOrchestrator` and `AnswerPlanningAgent` never invoke Gemini on `LANDING_PAGE`, `LOADING_STATE`, `UNKNOWN_PAGE`, or any DOM state where `len(extraction.questions) == 0`.
+2. **Compact Structured Prompts**: Instead of dumping all raw navigation links, footer menus, and full page text into Gemini, `build_structured_questions_prompt()` sends only the extracted questions and their candidate options (`element_id`, `type`, `value`, `text`).
+3. **Deduplication & Call Ceiling**: `AnswerPlanningAgent` hashes the extracted question set so identical page states are never sent to Gemini twice, and enforces `MAX_LLM_CALLS` (default `5`).
 
-~~~
-uvicorn api_server:app --host 127.0.0.1 --port 8000
-~~~
+---
 
-## Конфігурація
+## 7. Security & Public URL Guardrails
 
-| Змінна | Призначення |
-| --- | --- |
-| GEMINI_API_KEY | Ключ для Gemini |
-| GEMINI_MODEL | Назва моделі Gemini |
-| TEST_URL | Початкова URL-адреса цільової сторінки |
-| USER_SURNAME, USER_NAME, USER_GROUP | Значення для початкової форми |
-| MAX_STEPS | Максимальна кількість кроків агента |
-| ENABLE_VISION | Чи прикріплювати скриншоти до запиту моделі |
-| HEADLESS | Запуск Chromium без видимого вікна |
-| MAX_SAME_ACTION | Поріг повторення однакової дії |
-| TEST_LOAD_TIMEOUT | Час очікування вмісту тесту |
-| AUTO_SUBMIT | Чи натискати знайдену кнопку фінального надсилання автоматично |
-| API_TOKEN | Спільний токен для захисту API в поточному demo-сценарії |
-| GOOGLE_CLOUD_PROJECT | Вмикає збереження історії у Firestore, якщо service account має доступ |
-| FRONTEND_ORIGINS | Дозволені origin-и вебклієнта, розділені комами |
-| URL_POLICY_MODE | `public_https` (default) або `strict_allowlist` |
-| ALLOWED_TEST_HOSTS | Точні хости лише для явного режиму `strict_allowlist` |
+All browser sessions enforce strict SSRF and egress protections (`public_url_security.py` and `main.py`):
+- Only public `https://` target URLs are permitted (loopback, RFC1918 private networks, link-local, and cloud metadata IPs are blocked at DNS resolution, Playwright route interception, and the local `PublicEgressProxy`).
+- Device-scoped history isolation via `X-Device-ID` SHA-256 owner hashing.
 
-Шаблон значень міститься у [.env.example](.env.example). Не вставляй реальні ключі у цей файл.
+---
 
-## Політика URL та мережевий захист
+## 8. Local Development & Testing
 
-За замовчуванням `URL_POLICY_MODE=public_https`: API приймає синтаксично коректні публічні HTTPS-цілі без потреби додавати кожен новий домен у конфігурацію. Це дозволяє пробувати різні публічні сайти з тестами.
+```bash
+# Activate virtual environment
+source .venv/bin/activate
 
-`URL_POLICY_MODE=strict_allowlist` вмикає сумісний суворий режим, де допускаються лише точні hostname-и з `ALLOWED_TEST_HOSTS`. Це додатковий обмежувальний режим, а не засіб захисту від SSRF сам по собі.
-
-Перед запуском URL перевіряється на HTTPS, коректний hostname, відсутність вбудованих облікових даних, допустимий порт і публічні DNS/IP-адреси. Chromium використовує локальний loopback-only egress proxy, який перевіряє кожен outbound HTTP(S) destination та встановлює з’єднання з уже перевіреною IP-адресою. Запити до localhost, приватних, loopback, link-local, reserved та metadata адрес блокуються. Схеми, відмінні від HTTP(S), блокуються на рівні браузерного маршруту.
-
-Публічний URL сам по собі не гарантує, що сайт можна пройти автоматично: CAPTCHA, login walls, rate limits, нестандартні форми та динамічні компоненти можуть блокувати виконання. Агент має фіксувати ці випадки як обмеження/помилки, а не заявляти успіх без фактично отриманого результату.
-
-Жодний application-level proxy не замінює мережеву egress-політику хмарної інфраструктури. Для публічного production-сервісу слід продовжувати використовувати least-privilege service account, не надавати браузеру секрети Cloud Run, а за вимогами вищої гарантії — додати окремі egress rules на рівні інфраструктури.
-
-## API
-
-| Метод | Endpoint | Призначення |
-| --- | --- | --- |
-| GET | /api/health | Публічна перевірка доступності API |
-| POST | /api/run | Запуск агента |
-| GET | /api/status | Стан активного процесу й останні логи пристрою |
-| GET | /api/history | Історія лише для переданого device token |
-| DELETE | /api/history/{run_id} | Видалення одного запису свого пристрою |
-| DELETE | /api/history | Очищення історії свого пристрою |
-
-Захищені endpoint-и очікують заголовки X-API-Token і X-Device-Token. Не публікуй їх значення.
-
-## Статус запуску і результат тесту
-
-Це дві різні речі:
-
-- **status** описує життєвий цикл worker-процесу: running, completed або error.
-- **test_outcome** описує те, що агент зміг перевірити: наприклад, вміст тесту не завантажився, очікується ручне надсилання або результат сторінки зчитано.
-- **score** заповнюється лише тоді, коли агент розпізнав підтримуваний формат оцінки.
-
-Якщо вміст цільової сторінки не завантажився, run записується як помилка, а worker завершується з ненульовим кодом. Це не дозволяє звичайному завершенню Python-процесу маскувати невдалий запуск.
-
-## Перевірки
-
-~~~
-python -m py_compile api_server.py main.py public_url_security.py src/browser_agent/*.py
+# Run the complete unit, security, regression, and headless Playwright E2E test suite
 python -m unittest discover -s tests -v
-~~~
+```
 
-GitHub Actions запускає ці перевірки на push і pull request. Повний ручний тест також має перевіряти ізоляцію двох пристроїв, збереження історії після оновлення сторінки та сценарій із реально отриманим результатом.
-
-## Безпека та відомі обмеження
-
-- Поточний API_TOKEN — спільний demo-токен, а не повноцінна система користувацької автентифікації. Не роздавай його широкій аудиторії.
-- API поки запускає лише один browser worker одночасно; другий паралельний запуск відхиляється.
-- Скриншоти, логи та текст сторінки можуть містити персональні або навчальні дані. Перевіряй їх перед передаванням іншим.
-- Автоматизуй лише сайти, які маєш право тестувати; не намагайся обходити CAPTCHA, paywalls, автентифікацію чи інші обмеження доступу.
-- У репозиторії поки не визначено окрему LICENSE; це потрібно вирішити перед позиціонуванням як open-source проєкту.
-
-## Розгортання
-
-Інструкції для перевірки та контрольованого розгортання — у [DEPLOYMENT.md](DEPLOYMENT.md). Зміни з робочої гілки не варто розгортати у production, доки CI й ручний тест не пройшли.
+### Supported Quiz Formats & Known Limitations
+- **Supported**: Single-page and multi-page HTML quizzes using native `<input type="radio">`, `<input type="checkbox">`, `<select>` dropdowns, ARIA radio/checkbox/option roles, and button/card option groups; start/landing pages requiring profile fields or localized Start CTAs.
+- **Known Limitations**: Pages protected by CAPTCHA (`captcha_required`), mandatory login/password walls (`access_required`), or closed `<canvas>`/cross-origin iframe widgets are detected and reported with explicit diagnostic failure states rather than false-positive completions.

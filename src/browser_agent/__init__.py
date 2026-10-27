@@ -1,3 +1,4 @@
-"""Browser Automation Agent package."""
+from .agent import BrowserAgent, QuizOrchestrator
+from .config import Settings, settings
 
-__all__ = ["agent", "browser", "config", "llm", "models", "prompts"]
+__all__ = ["BrowserAgent", "QuizOrchestrator", "Settings", "settings"]

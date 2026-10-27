@@ -1,130 +1,69 @@
-SYSTEM_PROMPT = """
-You are the reasoning engine of an authorized browser automation
-agent operating on a test environment.
+from typing import Any, Dict, List
+from .models import ExtractedQuestion
 
-Your task is to analyze ALL multiple-choice questions visible
-on the current page and produce one answer selection for each
-question.
+SYSTEM_PROMPT = """You are the Answer Planning Specialist (Agent E) of a state-aware multi-agent browser automation system.
 
-IMPORTANT:
+Your task is to analyze the extracted quiz questions on the current page and return a complete, accurate BatchPlan selecting the best option for every question.
 
-The browser will execute your selections automatically.
-
-For every question:
-
-1. Identify the question text.
-2. Identify its available answer options.
-3. Determine the best answer.
-4. Select the element_id corresponding to that answer.
-
-Rules:
-
-1. Use ONLY element IDs present in the browser state.
-
-2. Never invent element IDs.
-
-3. Never invent answer options.
-
-4. Use the context field to understand which question
-   an answer control belongs to.
-
-5. Return one selection for each question.
-
-6. If a question has radio buttons, select exactly one.
-
-7. If a question genuinely allows multiple selections,
-   select all required options.
-
-8. Do not click navigation buttons.
-
-9. Do not click the final submit button.
-
-10. Do not perform browser actions yourself.
-
-11. Return the complete plan in one response.
-
-12. Keep reasons very short.
-
-13. The goal is to minimize the number of API requests.
-
-14. Do not stop after the first question.
-
-15. Analyze the entire page before producing the plan.
+STRICT RULES:
+1. Use ONLY element_id values listed in the provided options for each question.
+2. Never invent element IDs, questions, or options.
+3. Return one selection per single-choice or dropdown question.
+4. For <select> dropdown questions, set element_id to the <select> element ID and set option_value to the chosen option value.
+5. Never select navigation, share, restart, or submit buttons as quiz answers.
+6. Keep reason concise (1 short sentence).
 """
+
+
+def build_structured_questions_prompt(
+    url: str,
+    title: str,
+    questions: List[ExtractedQuestion],
+    user_data: Dict[str, Any] | None = None,
+) -> str:
+    blocks: List[str] = []
+    for q in questions:
+        opt_lines: List[str] = []
+        for opt in q.options:
+            val_part = f" | value={opt.value!r}" if opt.value else ""
+            opt_lines.append(
+                f"  - element_id={opt.element_id} | type={opt.control_type}{val_part} | text={opt.text!r}"
+            )
+        blocks.append(
+            f"QUESTION #{q.question_number} (id={q.question_id}, type={q.question_type}):\n"
+            f"Prompt: {q.prompt}\n"
+            f"Options:\n" + "\n".join(opt_lines)
+        )
+
+    questions_payload = "\n\n".join(blocks)
+    return (
+        f"QUIZ URL: {url}\n"
+        f"QUIZ TITLE: {title}\n"
+        f"TOTAL EXTRACTED QUESTIONS: {len(questions)}\n\n"
+        f"{questions_payload}\n\n"
+        f"Return a BatchPlan covering all {len(questions)} questions."
+    )
 
 
 def build_batch_prompt(
-    page_state: dict,
-    user_data: dict
+    page_state: Dict[str, Any],
+    user_data: Dict[str, Any] | None = None,
 ) -> str:
-
     elements_text = []
-
-    for element in page_state["elements"]:
-
-        element_id = element.get(
-            "id"
-        )
-
-        tag = element.get(
-            "tag"
-        )
-
-        element_type = element.get(
-            "type"
-        )
-
-        name = element.get(
-            "name"
-        )
-
-        text = element.get(
-            "text"
-        )
-
-        value = element.get(
-            "value"
-        )
-
-        context = element.get(
-            "context"
-        )
-
+    for element in page_state.get("elements", []):
         elements_text.append(
-            f"""
-ELEMENT ID: {element_id}
-TAG: {tag}
-TYPE: {element_type}
-NAME: {name}
-OPTION TEXT: {text}
-VALUE: {value}
-QUESTION CONTEXT: {context}
-"""
+            f"ELEMENT ID: {element.get('id')} | TAG: {element.get('tag')} | "
+            f"TYPE: {element.get('type')} | NAME: {element.get('name')} | "
+            f"TEXT: {element.get('text')} | VALUE: {element.get('value')} | "
+            f"CONTEXT: {element.get('context')}"
         )
 
-    return f"""
-CURRENT TEST PAGE
-
-URL:
-{page_state["url"]}
-
-TITLE:
-{page_state["title"]}
-
-PAGE TEXT:
-{page_state["text"]}
-
-INTERACTIVE ELEMENTS:
-
-{"".join(elements_text)}
-
-USER DATA:
-{user_data}
-
-Analyze the complete test.
-
-Return a complete answer plan for ALL visible
-multiple-choice questions.
-
-Do not return a partial plan.
-"""
+    return (
+        f"CURRENT TEST PAGE\n"
+        f"URL: {page_state.get('url')}\n"
+        f"TITLE: {page_state.get('title')}\n"
+        f"PAGE TEXT:\n{str(page_state.get('text') or '')[:6000]}\n\n"
+        f"INTERACTIVE ELEMENTS:\n" + "\n".join(elements_text) + "\n\n"
+        f"USER DATA: {user_data or {}}\n"
+        f"Analyze the complete test and return a BatchPlan for all visible questions."
+    )
