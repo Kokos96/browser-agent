@@ -241,11 +241,6 @@ class RunTimeoutAndLifecycleTests(unittest.TestCase):
                 "validate_public_web_url",
                 AsyncMock(return_value=(validated_target, ["93.184.216.34"])),
             ),
-            patch.object(
-                api_server,
-                "_public_egress_proxy",
-                SimpleNamespace(proxy_url="http://127.0.0.1:54321"),
-            ),
             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)),
         ):
             res = asyncio.run(api_server.run_agent(req, "test-token", token))
