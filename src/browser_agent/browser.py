@@ -149,6 +149,13 @@ class BrowserController:
                     return "";
                 }
 
+                // Tag the actual DOM nodes so later actions do not silently
+                // retarget a different element if the page inserts/removes controls.
+                const agentIdAttribute = "data-browser-agent-element-id";
+                elements.forEach((element, index) => {
+                    element.setAttribute(agentIdAttribute, String(index));
+                });
+
                 return elements.map(
                     (element, index) => {
 
@@ -255,30 +262,113 @@ class BrowserController:
         self,
         element_id: int
     ):
-
-        element = self._element(
-            element_id
-        )
-
+        element = self._element(element_id)
         await element.scroll_into_view_if_needed()
 
-        await element.click()
+        try:
+            await element.click(timeout=5000)
+            return
+        except PlaywrightError as error:
+            if "intercepts pointer events" not in str(error).lower():
+                raise
+
+        # A modal/share overlay can cover a valid target. Try the standard
+        # non-destructive Escape dismissal before attempting any close control.
+        await self._press_escape()
+        element = self._element(element_id)
+        await element.scroll_into_view_if_needed()
+        try:
+            await element.click(timeout=5000)
+            return
+        except PlaywrightError as error:
+            if "intercepts pointer events" not in str(error).lower():
+                raise
+
+        # If Escape did not clear the blocker, try clearly labelled close/cancel
+        # controls only. Never force-click through an overlay.
+        await self._click_visible_close_control()
+        element = self._element(element_id)
+        await element.scroll_into_view_if_needed()
+        await element.click(timeout=5000)
 
     async def fill(
         self,
         element_id: int,
         value: str
     ):
-
-        element = self._element(
-            element_id
-        )
-
+        element = self._element(element_id)
         await element.scroll_into_view_if_needed()
 
-        await element.fill(
-            value
+        try:
+            await element.fill(value, timeout=5000)
+            return
+        except PlaywrightError as error:
+            if "intercepts pointer events" not in str(error).lower():
+                raise
+
+        await self._press_escape()
+        element = self._element(element_id)
+        await element.scroll_into_view_if_needed()
+        try:
+            await element.fill(value, timeout=5000)
+            return
+        except PlaywrightError as error:
+            if "intercepts pointer events" not in str(error).lower():
+                raise
+
+        await self._click_visible_close_control()
+        element = self._element(element_id)
+        await element.scroll_into_view_if_needed()
+        await element.fill(value, timeout=5000)
+
+    async def _press_escape(self):
+        """Attempt the safest generic way to dismiss an obstructing overlay."""
+        try:
+            await self.page.keyboard.press("Escape")
+            await self.page.wait_for_timeout(150)
+        except PlaywrightError:
+            # Some embedded pages do not expose keyboard focus reliably.
+            pass
+
+    async def _click_visible_close_control(self) -> bool:
+        """Click a visible, explicitly labelled close/cancel control, if present."""
+        selectors = (
+            '[role="dialog"] button[aria-label*="close" i]',
+            '[aria-modal="true"] button[aria-label*="close" i]',
+            '[class*="overlay" i] button[aria-label*="close" i]',
+            'button[aria-label*="close" i]',
+            'button[title*="close" i]',
+            '[role="button"][aria-label*="close" i]',
+            'button[aria-label*="dismiss" i]',
+            'button[title*="dismiss" i]',
+            'button[aria-label*="закрити" i]',
+            'button[title*="закрити" i]',
+            'button[aria-label*="закрыть" i]',
+            'button[title*="закрыть" i]',
+            'button[aria-label*="cancel" i]',
+            'button[title*="cancel" i]',
+            'button[aria-label*="скасувати" i]',
+            'button[class*="close" i]',
         )
+
+        for selector in selectors:
+            try:
+                matches = self.page.locator(selector)
+                count = min(await matches.count(), 5)
+            except PlaywrightError:
+                continue
+
+            for index in range(count):
+                control = matches.nth(index)
+                try:
+                    if not await control.is_visible() or not await control.is_enabled():
+                        continue
+                    await control.click(timeout=1000)
+                    await self.page.wait_for_timeout(150)
+                    return True
+                except PlaywrightError:
+                    continue
+        return False
 
     async def select(
         self,
@@ -374,11 +464,9 @@ class BrowserController:
         self,
         element_id: int
     ):
-
-        locator = self.page.locator(
-            self.SELECTOR
-        )
-
-        return locator.nth(
-            element_id
+        # IDs are written onto actual DOM nodes during inspect(). A unique
+        # attribute locator avoids nth(index) silently selecting the wrong node
+        # if a dynamic page changes its interactive-element order.
+        return self.page.locator(
+            f'[data-browser-agent-element-id="{element_id}"]'
         )
