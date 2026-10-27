@@ -253,7 +253,7 @@ class DeviceHistoryTests(unittest.TestCase):
             )
         )
         self.assertFalse(
-            api_server.host_allowed_by_policy("localhost", "public_https", api_server.ALLOWED_HOSTS)
+            api_server.host_allowed_by_policy("localhost", "strict_allowlist", api_server.ALLOWED_HOSTS)
         )
 
 
