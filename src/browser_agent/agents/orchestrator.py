@@ -306,7 +306,11 @@ class QuizOrchestrator:
                 return False
 
             if classification.category in (PageCategory.AUTH_REQUIRED, PageCategory.ACCESS_GATE):
-                error_msg = "Сторінка тесту вимагає авторизації або входу в обліковий запис."
+                error_msg = (
+                    "Сторінка тесту вимагає підписки або оплати доступу."
+                    if classification.category == PageCategory.ACCESS_GATE
+                    else "Сторінка тесту вимагає авторизації або входу в обліковий запис."
+                )
                 self._transition(WorkflowState.ACCESS_REQUIRED)
                 self.run_record.update({
                     "status": "error",
