@@ -96,6 +96,25 @@ class QuizOrchestrator:
         return SubmissionAndResultAgent.extract_score(result_text)
 
     @staticmethod
+    def filter_unanswered_questions(
+        extraction: QuestionExtractionResult,
+        answered_signatures: Set[str],
+    ) -> QuestionExtractionResult:
+        """Remove all questions already answered on this page, including the all-answered case."""
+        unanswered = [
+            question for question in extraction.questions
+            if f"{question.container_signature}:{question.prompt}" not in answered_signatures
+        ]
+        if len(unanswered) == len(extraction.questions):
+            return extraction
+        return QuestionExtractionResult(
+            questions=unanswered,
+            submit_control_id=extraction.submit_control_id,
+            next_control_id=extraction.next_control_id,
+            page_readiness_notes=extraction.page_readiness_notes,
+        )
+
+    @staticmethod
     def _clean_log_text(value: Any) -> str:
         return re.sub(r"\s+", " ", str(value or "")).strip()
 
@@ -397,18 +416,11 @@ class QuizOrchestrator:
             self._transition(WorkflowState.EXTRACTING_QUESTIONS)
             extraction: QuestionExtractionResult = self.question_extractor.extract(state)
 
-            # Filter out questions already answered on the same page
-            unanswered_qs = [
-                q for q in extraction.questions
-                if f"{q.container_signature}:{q.prompt}" not in answered_signatures
-            ]
-            if unanswered_qs and len(unanswered_qs) != len(extraction.questions):
-                extraction = QuestionExtractionResult(
-                    questions=unanswered_qs,
-                    submit_control_id=extraction.submit_control_id,
-                    next_control_id=extraction.next_control_id,
-                    page_readiness_notes=extraction.page_readiness_notes,
-                )
+            # Filter out questions already answered on the same page. This must
+            # also handle the case where every extracted question was already answered.
+            extraction = self.filter_unanswered_questions(
+                extraction, answered_signatures
+            )
 
             radio_count = sum(1 for el in state.get("elements", []) if (el.get("type") or "").lower() == "radio")
             checkbox_count = sum(1 for el in state.get("elements", []) if (el.get("type") or "").lower() == "checkbox")
