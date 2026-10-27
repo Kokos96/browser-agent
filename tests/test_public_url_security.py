@@ -142,6 +142,10 @@ class BrowserRequestGuardTests(unittest.TestCase):
         class Request:
             url = "http://127.0.0.1:8080/admin"
 
+            @staticmethod
+            def is_navigation_request():
+                return True
+
         class Route:
             request = Request()
 
@@ -171,6 +175,10 @@ class BrowserRequestGuardTests(unittest.TestCase):
     def test_public_https_subresource_is_continued(self):
         class Request:
             url = "https://cdn.example.org/static/app.js"
+
+            @staticmethod
+            def is_navigation_request():
+                return False
 
         class Route:
             request = Request()
