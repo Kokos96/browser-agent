@@ -15,7 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 
 from public_url_security import (
-    PublicEgressProxy,
     UnsafePublicURL,
     host_allowed_by_policy,
     validate_public_web_url,
@@ -58,8 +57,6 @@ ALLOWED_HOSTS = {
 URL_POLICY_MODE = os.getenv("URL_POLICY_MODE", "public_https").strip().lower()
 if URL_POLICY_MODE not in {"public_https", "strict_allowlist"}:
     URL_POLICY_MODE = "invalid"
-_public_egress_proxy: PublicEgressProxy | None = None
-
 app = FastAPI(title="Browser Agent API")
 
 app.add_middleware(
@@ -74,22 +71,6 @@ app.add_middleware(
         "ngrok-skip-browser-warning",
     ],
 )
-
-
-@app.on_event("startup")
-async def start_public_egress_proxy():
-    """Start a loopback-only egress proxy before accepting browser runs."""
-    global _public_egress_proxy
-    if _public_egress_proxy is None:
-        _public_egress_proxy = await PublicEgressProxy().start()
-
-
-@app.on_event("shutdown")
-async def stop_public_egress_proxy():
-    global _public_egress_proxy
-    if _public_egress_proxy is not None:
-        await _public_egress_proxy.close()
-        _public_egress_proxy = None
 
 
 DEFAULT_AGENT_RUN_TIMEOUT_SECONDS = 180
@@ -682,12 +663,6 @@ async def run_agent(
             ),
         )
 
-    if _public_egress_proxy is None or not _public_egress_proxy.proxy_url:
-        raise HTTPException(
-            status_code=503,
-            detail="Secure browser network proxy is not ready; retry shortly.",
-        )
-
     async with lock:
         if process is not None and process.returncode is None:
             raise HTTPException(
@@ -708,7 +683,6 @@ async def run_agent(
         env["HEADLESS"] = "true"
         env["DEVICE_ID"] = device_id
         env["RUN_ID"] = run_key
-        env["BROWSER_HTTP_PROXY"] = _public_egress_proxy.proxy_url
         env["URL_POLICY_MODE"] = URL_POLICY_MODE
         if request.model:
             env["GEMINI_MODEL"] = request.model
