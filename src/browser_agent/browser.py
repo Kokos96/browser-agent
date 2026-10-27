@@ -183,6 +183,9 @@ class BrowserController:
                                     ? element.tagName.toLowerCase()
                                     : "",
 
+                            role:
+                                element.getAttribute("role"),
+
                             type:
                                 element.getAttribute("type"),
 
