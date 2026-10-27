@@ -88,7 +88,7 @@ class SubmissionAndResultAgent:
             print("Test answers are selected. Submit manually.")
             return SubmissionResult(
                 submission_attempted=False,
-                submission_confirmed=True,
+                submission_confirmed=False,
                 submit_control_id=submit_id,
                 awaiting_manual_submission=True,
                 test_outcome="awaiting_manual_submission",
@@ -130,7 +130,66 @@ class SubmissionAndResultAgent:
                     evidence=["submit_clicked", f"score_extracted:{score}"],
                 )
 
-            print("Сторінку результату збережено, але явний бал або кількість правильних відповідей не знайдено.")
+            extracted = QuizQuestionExtractor().extract(result_ps)
+            still_has_quiz_questions = bool(extracted.questions)
+            combined_result_text = (
+                f"{result_ps.title}\n{result_ps.url}\n{result_text}"
+            ).lower()
+            result_indicators = (
+                "quiz completed",
+                "test completed",
+                "test submitted",
+                "submission confirmed",
+                "your results",
+                "test results",
+                "quiz results",
+                "дякуємо за проходження",
+                "тест завершено",
+                "тест пройдено",
+                "результати тесту",
+                "результат тесту",
+                "правильних відповідей",
+                "правильных ответов",
+                "тест завершен",
+                "тест пройден",
+            )
+            has_result_indicator = any(
+                marker in combined_result_text for marker in result_indicators
+            )
+            location_changed = (
+                result_ps.url != ps.url or result_ps.title != ps.title
+            )
+            visible_content_changed = result_text.strip() != ps.text.strip()
+
+            result_transition_confirmed = (
+                not still_has_quiz_questions
+                and (
+                    has_result_indicator
+                    or location_changed
+                    or visible_content_changed
+                )
+            )
+            if not result_transition_confirmed:
+                message = (
+                    "Кнопку надсилання натиснуто, але після очікування не знайдено "
+                    "підтвердження завершення тесту або переходу до результату."
+                )
+                print(message)
+                return SubmissionResult(
+                    submission_attempted=True,
+                    submission_confirmed=False,
+                    submit_control_id=submit_id,
+                    result_page_captured=False,
+                    score_captured=False,
+                    score_text=None,
+                    test_outcome="submission_unconfirmed",
+                    result_excerpt=excerpt,
+                    result_url=result_ps.url,
+                    result_title=result_ps.title,
+                    evidence=["submit_clicked", "no_observable_result_transition"],
+                )
+
+            print("Сторінку результату змінено, але явний бал або кількість правильних відповідей не знайдено.")
             return SubmissionResult(
                 submission_attempted=True,
                 submission_confirmed=True,
@@ -142,13 +201,13 @@ class SubmissionAndResultAgent:
                 result_excerpt=excerpt,
                 result_url=result_ps.url,
                 result_title=result_ps.title,
-                evidence=["submit_clicked", "result_page_captured_without_explicit_score"],
+                evidence=["submit_clicked", "result_transition_confirmed_without_explicit_score"],
             )
         except Exception as error:
             print("Result page capture failed:", error)
             return SubmissionResult(
                 submission_attempted=True,
-                submission_confirmed=True,
+                submission_confirmed=False,
                 submit_control_id=submit_id,
                 result_page_captured=False,
                 score_captured=False,
