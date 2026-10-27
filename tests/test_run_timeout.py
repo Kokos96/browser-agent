@@ -4,9 +4,11 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import api_server
+from public_url_security import PublicURL
 from browser_agent.agent import BrowserAgent
 
 
@@ -224,9 +226,26 @@ class RunTimeoutAndLifecycleTests(unittest.TestCase):
 
         api_server.state_started_at = None
 
+        validated_target = PublicURL(
+            original=str(req.url),
+            scheme="https",
+            hostname="browser-agent-web-nine.vercel.app",
+            port=443,
+            path_and_query="/test-quiz",
+        )
         with (
             patch.object(api_server, "API_TOKEN", "test-token"),
             patch.object(api_server, "record_run_start"),
+            patch.object(
+                api_server,
+                "validate_public_web_url",
+                AsyncMock(return_value=(validated_target, ["93.184.216.34"])),
+            ),
+            patch.object(
+                api_server,
+                "_public_egress_proxy",
+                SimpleNamespace(proxy_url="http://127.0.0.1:54321"),
+            ),
             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)),
         ):
             res = asyncio.run(api_server.run_agent(req, "test-token", token))
