@@ -947,5 +947,36 @@ class RealPlaywrightLandingToQuizE2ETests(unittest.TestCase):
         asyncio.run(run_e2e())
 
 
+class ManualSubmissionOrchestratorStateTests(unittest.TestCase):
+    def test_manual_handoff_is_persisted_as_unconfirmed_not_completed(self):
+        async def run_test():
+            orchestrator = QuizOrchestrator(MagicMock(), MagicMock())
+            with tempfile.TemporaryDirectory() as tmp:
+                original_cwd = os.getcwd()
+                os.chdir(tmp)
+                try:
+                    result = await orchestrator._record_manual_submission_required()
+                    self.assertFalse(result)
+                    self.assertEqual(orchestrator.run_record["status"], "error")
+                    self.assertEqual(
+                        orchestrator.run_record["test_outcome"],
+                        "awaiting_manual_submission",
+                    )
+                    self.assertEqual(
+                        orchestrator.state,
+                        WorkflowState.SUBMISSION_UNCONFIRMED,
+                    )
+                    self.assertFalse(orchestrator.run_record["submission_attempted"])
+                    self.assertFalse(orchestrator.run_record["submission_confirmed"])
+                    with open("results/agent_history.json", encoding="utf-8") as handle:
+                        history = json.load(handle)
+                    self.assertEqual(len(history), 1)
+                    self.assertEqual(history[0]["status"], "error")
+                finally:
+                    os.chdir(original_cwd)
+
+        asyncio.run(run_test())
+
+
 if __name__ == "__main__":
     unittest.main()
