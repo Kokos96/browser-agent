@@ -36,19 +36,14 @@ async def main() -> bool:
         print(f"ERROR: target URL rejected by public HTTPS policy: {error}")
         return False
 
-    # The API process starts a shared container-local proxy and passes its URL
-    # to this worker. Direct local runs create and own their own proxy instead.
-    proxy_url = os.getenv("BROWSER_HTTP_PROXY")
-    owned_proxy = None
-    if not proxy_url:
-        owned_proxy = await PublicEgressProxy().start()
-        proxy_url = owned_proxy.proxy_url
-
+    # Each worker owns its own loopback-only proxy so it cannot inherit
+    # an arbitrary external proxy URL from the environment.
+    owned_proxy = await PublicEgressProxy().start()
     try:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(
                 headless=settings.headless,
-                proxy={"server": proxy_url, "bypass": "<-loopback>"},
+                proxy={"server": owned_proxy.proxy_url, "bypass": "<-loopback>"},
                 args=[
                     "--proxy-bypass-list=<-loopback>",
                     "--disable-quic",
@@ -64,8 +59,7 @@ async def main() -> bool:
             finally:
                 await browser.close()
     finally:
-        if owned_proxy is not None:
-            await owned_proxy.close()
+        await owned_proxy.close()
 
 
 def exit_code_for_run_result(result: bool | None) -> int:
