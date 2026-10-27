@@ -14,6 +14,13 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 
+from public_url_security import (
+    PublicEgressProxy,
+    UnsafePublicURL,
+    host_allowed_by_policy,
+    validate_public_web_url,
+)
+
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN", "")
@@ -47,6 +54,11 @@ ALLOWED_HOSTS = {
     ).split(",")
     if host.strip()
 }
+# Public HTTPS is the default. Restrictive deployments must opt in explicitly.
+URL_POLICY_MODE = os.getenv("URL_POLICY_MODE", "public_https").strip().lower()
+if URL_POLICY_MODE not in {"public_https", "strict_allowlist"}:
+    URL_POLICY_MODE = "invalid"
+_public_egress_proxy: PublicEgressProxy | None = None
 
 app = FastAPI(title="Browser Agent API")
 
@@ -62,6 +74,23 @@ app.add_middleware(
         "ngrok-skip-browser-warning",
     ],
 )
+
+
+@app.on_event("startup")
+async def start_public_egress_proxy():
+    """Start a loopback-only egress proxy before accepting browser runs."""
+    global _public_egress_proxy
+    if _public_egress_proxy is None:
+        _public_egress_proxy = await PublicEgressProxy().start()
+
+
+@app.on_event("shutdown")
+async def stop_public_egress_proxy():
+    global _public_egress_proxy
+    if _public_egress_proxy is not None:
+        await _public_egress_proxy.close()
+        _public_egress_proxy = None
+
 
 DEFAULT_AGENT_RUN_TIMEOUT_SECONDS = 180
 AGENT_RUN_TIMEOUT_SECONDS = int(
@@ -634,18 +663,29 @@ async def run_agent(
         raise HTTPException(status_code=400, detail="Unsupported Gemini model")
 
     url = str(request.url)
-    parsed = urlparse(url)
-
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.hostname.lower() not in ALLOWED_HOSTS
-        or parsed.username
-        or parsed.password
-    ):
+    try:
+        target, _resolved_addresses = await validate_public_web_url(
+            url, require_https=True
+        )
+    except UnsafePublicURL as exc:
         raise HTTPException(
             status_code=400,
-            detail="URL is not in the allowed HTTPS hosts",
+            detail=f"URL is not a safe public HTTPS target: {exc}",
+        ) from exc
+
+    if not host_allowed_by_policy(target.hostname, URL_POLICY_MODE, ALLOWED_HOSTS):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This public HTTPS host is not permitted by the configured "
+                "strict allowlist policy."
+            ),
+        )
+
+    if _public_egress_proxy is None or not _public_egress_proxy.proxy_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Secure browser network proxy is not ready; retry shortly.",
         )
 
     async with lock:
@@ -668,6 +708,8 @@ async def run_agent(
         env["HEADLESS"] = "true"
         env["DEVICE_ID"] = device_id
         env["RUN_ID"] = run_key
+        env["BROWSER_HTTP_PROXY"] = _public_egress_proxy.proxy_url
+        env["URL_POLICY_MODE"] = URL_POLICY_MODE
         if request.model:
             env["GEMINI_MODEL"] = request.model
 
