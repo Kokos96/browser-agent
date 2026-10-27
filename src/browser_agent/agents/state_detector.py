@@ -42,6 +42,32 @@ class QuizPageStateDetector:
         "authentication required",
     )
 
+    ACCESS_GATE_PHRASES = (
+        "subscription required",
+        "subscribe to continue",
+        "subscribe to access",
+        "premium members only",
+        "members only",
+        "upgrade to continue",
+        "upgrade your plan to continue",
+        "purchase access",
+        "pay to continue",
+        "unlock this test",
+        "unlock this quiz",
+        "available to subscribers",
+        "потрібна підписка",
+        "доступно за підпискою",
+        "оформіть підписку",
+        "платний тест",
+        "платна підписка",
+        "требуется подписка",
+        "доступно по подписке",
+        "оформите подписку",
+        "платный тест",
+        "платная подписка",
+        "оплатите доступ",
+    )
+
     RESULT_PHRASES = (
         "ваш результат",
         "результат тесту",
@@ -139,7 +165,17 @@ class QuizPageStateDetector:
                 recommended_action="abort_auth_required",
             )
 
-        # 7. Landing / Start Page check
+        # 7. Paywall/subscription checks precede start-control detection so an
+        # upsell page is not mistaken for a quiz landing page.
+        if any(p in combined_lower for p in self.ACCESS_GATE_PHRASES):
+            return PageClassification(
+                category=PageCategory.ACCESS_GATE,
+                confidence=0.92,
+                evidence=["subscription_or_paywall_phrase_detected"],
+                recommended_action="stop_access_required",
+            )
+
+        # 8. Landing / Start Page check
         has_profile_fields = any(
             (el.name or "").lower() in {"surname", "name", "grp", "group"}
             for el in ps.elements
@@ -160,7 +196,7 @@ class QuizPageStateDetector:
                 start_candidates=start_candidates,
             )
 
-        # 8. Unknown / Non-Quiz Page (e.g. generic page with 46 links/buttons but no quiz controls)
+        # 9. Unknown / Non-Quiz Page (e.g. generic page with 46 links/buttons but no quiz controls)
         return PageClassification(
             category=PageCategory.UNKNOWN_PAGE,
             confidence=0.80,
