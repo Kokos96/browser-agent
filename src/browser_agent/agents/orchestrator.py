@@ -245,6 +245,33 @@ class QuizOrchestrator:
             await self.save_history()
             return False
 
+    async def _record_manual_submission_required(self) -> bool:
+        """Persist a manual handoff as an incomplete/error run, never as success."""
+        message = (
+            "Відповіді вибрано, але автоматичне надсилання вимкнено. "
+            "Потрібно вручну натиснути кнопку відправлення; результат ще не підтверджено."
+        )
+        self._transition(
+            WorkflowState.SUBMISSION_UNCONFIRMED,
+            message,
+            {"test_outcome": "awaiting_manual_submission"},
+        )
+        self.run_record.update({
+            "status": "error",
+            "test_outcome": "awaiting_manual_submission",
+            "failure_stage": "submission",
+            "error": message,
+            "submission_attempted": False,
+            "submission_confirmed": False,
+        })
+        self.emit_event(
+            ProgressEventType.RUN_FAILED,
+            message=message,
+            status="error",
+        )
+        await self.save_history()
+        return False
+
     async def _run_internal(self) -> bool:
         print("Agent started")
         print("URL:", settings.test_url)
@@ -636,6 +663,9 @@ class QuizOrchestrator:
 
         self.run_record["submission_attempted"] = sub_result.submission_attempted
         self.run_record["submission_confirmed"] = sub_result.submission_confirmed
+
+        if sub_result.awaiting_manual_submission:
+            return await self._record_manual_submission_required()
 
         if (
             not sub_result.submission_confirmed
