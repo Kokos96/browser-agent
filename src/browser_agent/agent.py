@@ -709,10 +709,8 @@ class BrowserAgent:
             "begin test",
             "begin quiz",
             "пройти тест",
-            "розпочати",
-            "почати",
-            "начать",
         )
+        exact_short_labels = {"розпочати", "почати", "начать", "start"}
 
         for element in elements:
             tag = (element.get("tag") or "").strip().lower()
@@ -721,7 +719,7 @@ class BrowserAgent:
                 continue
 
             visible_text = re.sub(
-                r"\\s+",
+                r"\s+",
                 " ",
                 " ".join(
                     str(element.get(key) or "")
@@ -735,9 +733,9 @@ class BrowserAgent:
             # Longer phrases are matched as part of the label; the short
             # "start"/"начать"/"почати" variants require an exact label to
             # avoid clicking unrelated controls such as "Restart".
-            if any(phrase in visible_text for phrase in phrases[:-2]):
+            if any(phrase in visible_text for phrase in phrases):
                 return element
-            if visible_text in {"розпочати", "почати", "начать"}:
+            if visible_text in exact_short_labels:
                 return element
 
         return None
