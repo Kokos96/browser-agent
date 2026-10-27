@@ -1,9 +1,15 @@
 import asyncio
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from playwright.async_api import Error as PlaywrightError
+
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from browser_agent.agent import BrowserAgent
 from browser_agent.browser import BrowserController
