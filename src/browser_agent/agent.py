@@ -289,98 +289,125 @@ class BrowserAgent:
             return False
 
         # ---------------------------------------------
-        # Validate the returned plan.
-        # ---------------------------------------------
+        # Validate that Gemini actually identified answerable quiz questions.
+        # A successful Python process is not proof that the test was completed.
+        total_questions = int(plan.total_questions or 0)
+        self.run_record["questions_detected"] = total_questions
+        self.run_record["answers_planned"] = len(plan.selections)
+
+        if not self.is_usable_question_plan(total_questions, plan.selections):
+            error_message = (
+                "Gemini did not identify any answerable quiz questions. "
+                "No answers were selected and the test was not submitted."
+            )
+            print("ERROR: " + error_message)
+            self.run_record.update({
+                "status": "error",
+                "test_outcome": "questions_not_detected",
+                "failure_stage": "question_detection",
+                "error": error_message,
+                "answers_selected": 0,
+            })
+            await self.save_history()
+            return False
 
         valid_ids = {
             element["id"]
-            for element in state[
-                "elements"
-            ]
+            for element in state["elements"]
         }
-
         valid_selections = []
-
         for selection in plan.selections:
-
-            if (
-                selection.element_id
-                not in valid_ids
-            ):
-
-                print(
-                    "WARNING: Gemini returned "
-                    "unknown element:",
-                    selection.element_id
-                )
-
+            if selection.element_id not in valid_ids:
+                print("WARNING: Gemini returned an unknown answer element:", selection.element_id)
                 continue
-
-            valid_selections.append(
-                selection
-            )
+            valid_selections.append(selection)
 
         print()
-        print(
-            "Valid selections:",
-            len(valid_selections)
-        )
+        print("Valid selections:", len(valid_selections))
+        print("Gemini reported questions:", total_questions)
 
-        print(
-            "Gemini reported questions:",
-            plan.total_questions
-        )
-
-        # ---------------------------------------------
-        # Execute all selections.
-        # No additional Gemini calls.
-        # ---------------------------------------------
-
-        for selection in valid_selections:
-
-            print(
-                f"Question "
-                f"{selection.question_number}: "
-                f"select element "
-                f"{selection.element_id}"
+        if not valid_selections:
+            error_message = (
+                "Gemini returned a plan, but none of its answer element IDs "
+                "matched the current page."
             )
+            print("ERROR: " + error_message)
+            self.run_record.update({
+                "status": "error",
+                "test_outcome": "answer_elements_not_found",
+                "failure_stage": "answer_selection",
+                "error": error_message,
+                "answers_selected": 0,
+            })
+            await self.save_history()
+            return False
+
+        elements_by_id = {
+            element.get("id"): element for element in state.get("elements", [])
+        }
+        selected_count = 0
+
+        # Show the question number and selected visible option in the activity log.
+        for selection in valid_selections:
+            element = elements_by_id.get(selection.element_id, {})
+            raw_label = (
+                element.get("text")
+                or element.get("aria_label")
+                or element.get("value")
+                or element.get("name")
+                or "обраний елемент"
+            )
+            answer_label = self._clean_log_text(raw_label)
+            raw_context = self._clean_log_text(element.get("context") or "")
+            question_context = raw_context[:147].rstrip()
+            answer_label = answer_label[:97].rstrip()
+            if len(raw_context) > 150:
+                question_context += "…"
+            if len(self._clean_log_text(raw_label)) > 100:
+                answer_label += "…"
+
+            description = (
+                f"{question_context} — обрано «{answer_label}»"
+                if question_context
+                else f"обрано «{answer_label}»"
+            )
+            print(f"Питання {selection.question_number}/{total_questions}: {description}")
 
             try:
-
-                await self.browser.select(
-                    selection.element_id
-                )
-
-                self.history.append(
-                    {
-                        "question":
-                            selection.question_number,
-
-                        "element_id":
-                            selection.element_id,
-
-                        "reason":
-                            selection.reason,
-                    }
-                )
-
+                await self.browser.select(selection.element_id)
+                selected_count += 1
+                self.history.append({
+                    "question": selection.question_number,
+                    "element_id": selection.element_id,
+                    "answer": answer_label,
+                    "context": question_context,
+                    "reason": selection.reason,
+                })
             except Exception as error:
-
                 print(
-                    "Selection error:",
-                    error
+                    f"ERROR: не вдалося вибрати відповідь на питання "
+                    f"{selection.question_number}: {error}"
                 )
 
-        # ---------------------------------------------
-        # Finished selecting answers.
-        # ---------------------------------------------
+        self.run_record["answers_selected"] = selected_count
+        print(f"Вибрано відповідей: {selected_count}/{total_questions}")
+
+        if selected_count == 0:
+            error_message = "Не вдалося вибрати жодної відповіді на сторінці тесту."
+            self.run_record.update({
+                "status": "error",
+                "test_outcome": "answer_selection_failed",
+                "failure_stage": "answer_selection",
+                "error": error_message,
+            })
+            await self.save_history()
+            return False
 
         print()
         print("=" * 60)
         print("ALL PLANNED ANSWERS EXECUTED")
         print("=" * 60)
 
-        # ---------------------------------------------
         # Look for final submit button.
         # ---------------------------------------------
 
