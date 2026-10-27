@@ -46,9 +46,15 @@ async def main() -> bool:
         return False
 
     access_mode = os.getenv("URL_POLICY_MODE", "public_https").strip().lower()
+    default_allowed_hosts = (
+        "quiz-web-wzr7.onrender.com",
+        "browser-agent-web-nine.vercel.app",
+    )
     allowed_hosts = {
         host.strip().lower()
-        for host in os.getenv("ALLOWED_TEST_HOSTS", "").split(",")
+        for host in os.getenv(
+            "ALLOWED_TEST_HOSTS", ",".join(default_allowed_hosts)
+        ).split(",")
         if host.strip()
     }
     if not host_allowed_by_policy(target.hostname, access_mode, allowed_hosts):
