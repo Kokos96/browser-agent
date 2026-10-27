@@ -41,6 +41,7 @@ gcloud run deploy browser-agent \
   --source . \
   --region europe-west1 \
   --no-cpu-throttling \
+  --update-env-vars=URL_POLICY_MODE=public_https \
   --min-instances 1 \
   --max-instances 1 \
   --timeout 300
