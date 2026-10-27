@@ -29,9 +29,11 @@ from browser_agent.models import (
     BatchPlan,
     BatchSelection,
     Element,
+    ExtractedQuestion,
     PageCategory,
     PageState,
     ProgressEventType,
+    QuestionExtractionResult,
     ValidatedAnswerAction,
     ValidatedAnswerPlan,
     WorkflowState,
@@ -77,6 +79,57 @@ class StartPageDetectionTests(unittest.TestCase):
 
 
 class StateDetectorAndExtractorTests(unittest.TestCase):
+    def test_filter_removes_all_questions_when_they_were_already_answered(self):
+        extraction = QuestionExtractionResult(
+            questions=[
+                ExtractedQuestion(
+                    question_id="q1",
+                    question_number=1,
+                    prompt="Question already answered?",
+                    container_signature="container-1",
+                )
+            ],
+            submit_control_id=9,
+            next_control_id=8,
+            page_readiness_notes=["page was inspected"],
+        )
+
+        filtered = QuizOrchestrator.filter_unanswered_questions(
+            extraction,
+            {"container-1:Question already answered?"},
+        )
+
+        self.assertEqual(filtered.questions, [])
+        self.assertEqual(filtered.submit_control_id, 9)
+        self.assertEqual(filtered.next_control_id, 8)
+        self.assertEqual(filtered.page_readiness_notes, ["page was inspected"])
+
+    def test_filter_preserves_unanswered_questions_on_same_page(self):
+        extraction = QuestionExtractionResult(
+            questions=[
+                ExtractedQuestion(
+                    question_id="q1",
+                    question_number=1,
+                    prompt="Already done?",
+                    container_signature="c1",
+                ),
+                ExtractedQuestion(
+                    question_id="q2",
+                    question_number=2,
+                    prompt="Still pending?",
+                    container_signature="c2",
+                ),
+            ]
+        )
+
+        filtered = QuizOrchestrator.filter_unanswered_questions(
+            extraction,
+            {"c1:Already done?"},
+        )
+
+        self.assertEqual([q.question_id for q in filtered.questions], ["q2"])
+
+
     """Categories A, B, C: Page classification and structured question extraction."""
 
     def setUp(self):
