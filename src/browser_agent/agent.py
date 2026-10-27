@@ -461,10 +461,28 @@ class BrowserAgent:
                 )
 
         else:
+            existing_score = self.extract_score(str(final_state.get("text") or ""))
+            if existing_score:
+                self.run_record["score"] = existing_score
+                self.run_record["test_outcome"] = "score_captured"
+                print("Результат тесту:", existing_score)
+                self.run_record["status"] = "completed"
+                await self.save_history()
+                return True
 
-            print(
-                "No final submit button detected."
+            error_message = (
+                "Answers were selected, but no submit control or visible "
+                "test result was found. Completion cannot be confirmed."
             )
+            print("ERROR: " + error_message)
+            self.run_record.update({
+                "status": "error",
+                "test_outcome": "submit_control_not_found",
+                "failure_stage": "submission",
+                "error": error_message,
+            })
+            await self.save_history()
+            return False
 
         # Keep process completion separate from the actual test outcome.
         self.run_record["test_outcome"] = (
@@ -492,16 +510,17 @@ class BrowserAgent:
                 print("Result page text:")
                 print(result_page["text_excerpt"])
 
-                score_match = re.search(
-                    r"Ваш результат:\s*(\d+)\s*/\s*(\d+)",
-                    result_text,
-                    flags=re.IGNORECASE,
-                )
-                if score_match:
-                    score = f"{score_match.group(1)}/{score_match.group(2)}"
+                score = self.extract_score(result_text)
+                if score:
                     self.run_record["score"] = score
                     self.run_record["test_outcome"] = "score_captured"
-                    print("Ваш результат:", score)
+                    print("Результат тесту:", score)
+                else:
+                    self.run_record["test_outcome"] = "result_page_captured"
+                    print(
+                        "Сторінку результату збережено, але явний бал "
+                        "або кількість правильних відповідей не знайдено."
+                    )
             except Exception as error:
                 self.run_record["test_outcome"] = "result_capture_failed"
                 self.run_record["result_capture_error"] = str(error)
@@ -510,6 +529,35 @@ class BrowserAgent:
         self.run_record["status"] = "completed"
         await self.save_history()
         return True
+
+    @staticmethod
+    def is_usable_question_plan(total_questions: int, selections) -> bool:
+        """A plan is usable only when it includes both questions and selections."""
+        return total_questions > 0 and bool(selections)
+
+    @staticmethod
+    def extract_score(result_text: str) -> str | None:
+        """Extract an explicit score or correct-answer count; never infer one."""
+        patterns = (
+            r"(?:ваш результат(?: тесту)?|результат тесту|your score|test score|"
+            r"ви набрали|вы набрали|score)\s*[:：—-]?\s*"
+            r"(\d+)\s*(?:/|із|з|из|out of|of)\s*(\d+)",
+            r"(?:правильних відповідей|правильні відповіді|правильных ответов|"
+            r"верных ответов|correct answers)\s*[:：—-]?\s*"
+            r"(\d+)\s*(?:/|із|з|из|out of|of)\s*(\d+)",
+            r"(\d+)\s+(?:із|з|из|out of|of)\s+(\d+)\s+"
+            r"(?:правильних відповідей|правильных ответов|correct answers)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, result_text or "", flags=re.IGNORECASE)
+            if match:
+                return f"{match.group(1)}/{match.group(2)}"
+        return None
+
+    @staticmethod
+    def _clean_log_text(value) -> str:
+        """Collapse whitespace so question and answer context remains readable."""
+        return re.sub(r"\s+", " ", str(value or "")).strip()
 
     def is_loading(
         self,
