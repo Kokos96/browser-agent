@@ -172,6 +172,40 @@ class BrowserRequestGuardTests(unittest.TestCase):
         self.assertTrue(route.aborted)
         self.assertFalse(route.continued)
 
+
+    def test_http_top_level_redirect_is_rejected_as_non_https(self):
+        class Request:
+            url = "http://example.org/redirect-target"
+
+            @staticmethod
+            def is_navigation_request():
+                return True
+
+        class Route:
+            request = Request()
+
+            def __init__(self):
+                self.aborted = False
+                self.continued = False
+
+            async def abort(self, reason):
+                self.aborted = True
+
+            async def continue_(self):
+                self.continued = True
+
+        async def scenario():
+            route = Route()
+            validator = AsyncMock(side_effect=UnsafePublicURL("target must use HTTPS"))
+            with patch("main.validate_public_web_url", new=validator):
+                await agent_main.block_non_web_schemes(route)
+            validator.assert_awaited_once_with(Request.url, require_https=True)
+            return route
+
+        route = asyncio.run(scenario())
+        self.assertTrue(route.aborted)
+        self.assertFalse(route.continued)
+
     def test_public_https_subresource_is_continued(self):
         class Request:
             url = "https://cdn.example.org/static/app.js"
