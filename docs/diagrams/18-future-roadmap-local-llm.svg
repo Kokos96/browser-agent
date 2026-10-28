@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 260" width="100%">
+
+<defs>
+  <style>
+    .bg { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+    .zone { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-sec { fill: #fef2f2; stroke: #f87171; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-green { fill: #f0fdf4; stroke: #4ade80; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 6; }
+    .box-primary { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.8; rx: 6; }
+    .box-accent { fill: #ecfdf5; stroke: #059669; stroke-width: 1.8; rx: 6; }
+    .box-warn { fill: #fffbeb; stroke: #d97706; stroke-width: 1.8; rx: 6; }
+    .box-danger { fill: #fef2f2; stroke: #dc2626; stroke-width: 1.8; rx: 6; }
+    .box-purple { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 1.8; rx: 6; }
+    .box-dark { fill: #0f172a; stroke: #1e293b; stroke-width: 1.8; rx: 6; }
+    .title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 13px; font-weight: 700; fill: #0f172a; }
+    .zone-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11px; font-weight: 700; fill: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+    .node-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #0f172a; text-anchor: middle; }
+    .node-title-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+    .node-sub { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #475569; text-anchor: middle; }
+    .node-sub-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #cbd5e1; text-anchor: middle; }
+    .edge-label { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9px; font-weight: 600; fill: #1e293b; text-anchor: middle; }
+    .arrow { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    .arrow-blue { stroke: #2563eb; stroke-width: 1.8; fill: none; marker-end: url(#arrow-blue); }
+    .arrow-green { stroke: #059669; stroke-width: 1.8; fill: none; marker-end: url(#arrow-green); }
+    .arrow-red { stroke: #dc2626; stroke-width: 1.6; stroke-dasharray: 4,3; fill: none; marker-end: url(#arrow-red); }
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+  </marker>
+  <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="2" y="2" width="816" height="256"/>
+
+  <text class="title" x="20" y="26">Цільова архітектура v3.0: Перехід із хмарного Gemini API на власну локальну LLM-інфраструктуру</text>
+  <rect class="zone" x="18" y="45" width="240" height="195"/>
+  <text class="zone-title" x="28" y="63">Поточна модель (Cloud API)</text>
+  <rect class="box-warn" x="32" y="78" width="212" height="68"/>
+  <text class="node-title" x="138" y="98">Google Gemini Cloud API</text>
+  <text class="node-sub" x="138" y="114">• Тарифікація за кожен токен</text>
+  <text class="node-sub" x="138" y="128">• Жорсткі квоти RPM / RPD</text>
+  <text class="node-sub" x="138" y="140">• Зовнішня передача даних</text>
+  <rect class="box" x="32" y="160" width="212" height="64"/>
+  <text class="node-title" x="138" y="180">Абстракція LLMClient</text>
+  <text class="node-sub" x="138" y="196">Єдиний інтерфейс у llm.py</text>
+  <text class="node-sub" x="138" y="210">дозволяє заміну провайдера</text>
+
+  <rect class="zone-green" x="285" y="45" width="515" height="195"/>
+  <text class="zone-title" x="297" y="63">Перспективна локальна AI-інфраструктура (Self-Hosted Local LLM)</text>
+
+  <rect class="box-primary" x="300" y="78" width="230" height="72"/>
+  <text class="node-title" x="415" y="98">Локальний Inference-кластер</text>
+  <text class="node-sub" x="415" y="114">vLLM / Ollama / TGI (OpenAI API)</text>
+  <text class="node-sub" x="415" y="128">Моделі: Qwen2.5-VL-14B / Llama-3.3</text>
+  <text class="node-sub" x="415" y="142">GPU: NVIDIA RTX 4090 / A100 / L4</text>
+
+  <rect class="box-accent" x="550" y="78" width="235" height="72"/>
+  <text class="node-title" x="667" y="98">Переваги локальної нейронки</text>
+  <text class="node-sub" x="667" y="114">• 0 $ за токени, безлімітний RPM/RPD</text>
+  <text class="node-sub" x="667" y="128">• 100% приватність (GDPR / NDA)</text>
+  <text class="node-sub" x="667" y="142">• Контекст до 32k–128k токенів</text>
+
+  <rect class="box-purple" x="300" y="164" width="485" height="62"/>
+  <text class="node-title" x="542" y="184">Спеціалізоване донавчання (LoRA Fine-Tuning) + Мультимодальність (Vision DOM)</text>
+  <text class="node-sub" x="542" y="200">QLoRA-донавчання моделі на корпусі DOM-структур освітніх платформ + візуальний аналіз</text>
+  <text class="node-sub" x="542" y="214">скриншотів сторінки (Vision-Language) для розпізнавання формул, графіків і Canvas</text>
+
+  <line class="arrow-green" x1="244" y1="192" x2="300" y2="114"/>
+
+</svg>

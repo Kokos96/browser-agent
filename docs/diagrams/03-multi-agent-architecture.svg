@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 300" width="100%">
+
+<defs>
+  <style>
+    .bg { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+    .zone { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-sec { fill: #fef2f2; stroke: #f87171; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-green { fill: #f0fdf4; stroke: #4ade80; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 6; }
+    .box-primary { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.8; rx: 6; }
+    .box-accent { fill: #ecfdf5; stroke: #059669; stroke-width: 1.8; rx: 6; }
+    .box-warn { fill: #fffbeb; stroke: #d97706; stroke-width: 1.8; rx: 6; }
+    .box-danger { fill: #fef2f2; stroke: #dc2626; stroke-width: 1.8; rx: 6; }
+    .box-purple { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 1.8; rx: 6; }
+    .box-dark { fill: #0f172a; stroke: #1e293b; stroke-width: 1.8; rx: 6; }
+    .title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 13px; font-weight: 700; fill: #0f172a; }
+    .zone-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11px; font-weight: 700; fill: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+    .node-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #0f172a; text-anchor: middle; }
+    .node-title-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+    .node-sub { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #475569; text-anchor: middle; }
+    .node-sub-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #cbd5e1; text-anchor: middle; }
+    .edge-label { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9px; font-weight: 600; fill: #1e293b; text-anchor: middle; }
+    .arrow { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    .arrow-blue { stroke: #2563eb; stroke-width: 1.8; fill: none; marker-end: url(#arrow-blue); }
+    .arrow-green { stroke: #059669; stroke-width: 1.8; fill: none; marker-end: url(#arrow-green); }
+    .arrow-red { stroke: #dc2626; stroke-width: 1.6; stroke-dasharray: 4,3; fill: none; marker-end: url(#arrow-red); }
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+  </marker>
+  <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="2" y="2" width="816" height="296"/>
+
+  <text class="title" x="20" y="26">Мультиагентна архітектура ядра (7 спеціалізованих ролей)</text>
+  <rect class="box-dark" x="270" y="42" width="280" height="58"/>
+  <text class="node-title-light" x="410" y="64">Agent A: QuizOrchestrator</text>
+  <text class="node-sub-light" x="410" y="80">orchestrator.py · Головний координатор станів,</text>
+  <text class="node-sub-light" x="410" y="92">бюджету кроків, дедуплікації та телеметрії</text>
+
+  <!-- Row 1 of subagents -->
+  <rect class="box-primary" x="25" y="135" width="235" height="64"/>
+  <text class="node-title" x="142" y="156">Agent B: PageStateDetector</text>
+  <text class="node-sub" x="142" y="171">state_detector.py · Класифікація 11 станів</text>
+  <text class="node-sub" x="142" y="185">(LOGIN, PAYWALL, QUIZ_READY, RESULT...)</text>
+
+  <rect class="box-primary" x="292" y="135" width="235" height="64"/>
+  <text class="node-title" x="410" y="156">Agent C: NavigationAgent</text>
+  <text class="node-sub" x="410" y="171">navigation_agent.py · Пошук кнопок старту,</text>
+  <text class="node-sub" x="410" y="185">продовження, пагінації та автопрофілю</text>
+
+  <rect class="box-primary" x="560" y="135" width="235" height="64"/>
+  <text class="node-title" x="677" y="156">Agent D: QuestionExtractor</text>
+  <text class="node-sub" x="677" y="171">question_extractor.py · Мультистратегічний</text>
+  <text class="node-sub" x="677" y="185">парсинг питань і фільтр відповідей</text>
+
+  <!-- Row 2 of subagents -->
+  <rect class="box-purple" x="25" y="220" width="235" height="64"/>
+  <text class="node-title" x="142" y="241">Agent E: AnswerPlanner (LLM)</text>
+  <text class="node-sub" x="142" y="256">answer_planner.py · Пакетне планування</text>
+  <text class="node-sub" x="142" y="270">відповідей Gemini + JSON-валідація</text>
+
+  <rect class="box-accent" x="292" y="220" width="235" height="64"/>
+  <text class="node-title" x="410" y="241">Agent F: BrowserActionExecutor</text>
+  <text class="node-sub" x="410" y="256">action_executor.py · Надійні кліки, закриття</text>
+  <text class="node-sub" x="410" y="270">оверлеїв, верифікація змін у DOM</text>
+
+  <rect class="box-warn" x="560" y="220" width="235" height="64"/>
+  <text class="node-title" x="677" y="241">Agent G: SubmissionVerifier</text>
+  <text class="node-sub" x="677" y="256">submission_agent.py · Безпечний сабміт,</text>
+  <text class="node-sub" x="677" y="270">екстракція балів (X/Y, %) та вердикту</text>
+
+  <line class="arrow-blue" x1="330" y1="100" x2="142" y2="135"/>
+  <line class="arrow-blue" x1="410" y1="100" x2="410" y2="135"/>
+  <line class="arrow-blue" x1="490" y1="100" x2="677" y2="135"/>
+  <line class="arrow" x1="142" y1="199" x2="142" y2="220"/>
+  <line class="arrow" x1="410" y1="199" x2="410" y2="220"/>
+  <line class="arrow" x1="677" y1="199" x2="677" y2="220"/>
+
+</svg>

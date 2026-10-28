@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 250" width="100%">
+
+<defs>
+  <style>
+    .bg { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+    .zone { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-sec { fill: #fef2f2; stroke: #f87171; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-green { fill: #f0fdf4; stroke: #4ade80; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 6; }
+    .box-primary { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.8; rx: 6; }
+    .box-accent { fill: #ecfdf5; stroke: #059669; stroke-width: 1.8; rx: 6; }
+    .box-warn { fill: #fffbeb; stroke: #d97706; stroke-width: 1.8; rx: 6; }
+    .box-danger { fill: #fef2f2; stroke: #dc2626; stroke-width: 1.8; rx: 6; }
+    .box-purple { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 1.8; rx: 6; }
+    .box-dark { fill: #0f172a; stroke: #1e293b; stroke-width: 1.8; rx: 6; }
+    .title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 13px; font-weight: 700; fill: #0f172a; }
+    .zone-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11px; font-weight: 700; fill: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+    .node-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #0f172a; text-anchor: middle; }
+    .node-title-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+    .node-sub { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #475569; text-anchor: middle; }
+    .node-sub-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #cbd5e1; text-anchor: middle; }
+    .edge-label { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9px; font-weight: 600; fill: #1e293b; text-anchor: middle; }
+    .arrow { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    .arrow-blue { stroke: #2563eb; stroke-width: 1.8; fill: none; marker-end: url(#arrow-blue); }
+    .arrow-green { stroke: #059669; stroke-width: 1.8; fill: none; marker-end: url(#arrow-green); }
+    .arrow-red { stroke: #dc2626; stroke-width: 1.6; stroke-dasharray: 4,3; fill: none; marker-end: url(#arrow-red); }
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+  </marker>
+  <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="2" y="2" width="816" height="246"/>
+
+  <text class="title" x="20" y="26">UML-діаграма ключових моделей даних (Pydantic v2 Schemas)</text>
+  <rect class="box-primary" x="20" y="46" width="180" height="85"/>
+  <text class="node-title" x="110" y="65">RunRequest (API)</text>
+  <text class="node-sub" x="110" y="82">+ url: HttpUrl</text>
+  <text class="node-sub" x="110" y="96">+ first_name / last_name: str</text>
+  <text class="node-sub" x="110" y="110">+ group: str</text>
+  <text class="node-sub" x="110" y="122">+ model: str</text>
+
+  <rect class="box" x="225" y="46" width="180" height="85"/>
+  <text class="node-title" x="315" y="65">PageObservation</text>
+  <text class="node-sub" x="315" y="82">+ url, title: str</text>
+  <text class="node-sub" x="315" y="96">+ visible_text: str</text>
+  <text class="node-sub" x="315" y="110">+ elements: list[DOMElement]</text>
+  <text class="node-sub" x="315" y="122">+ forms_count: int</text>
+
+  <rect class="box-purple" x="430" y="46" width="180" height="85"/>
+  <text class="node-title" x="520" y="65">ExtractedQuestion</text>
+  <text class="node-sub" x="520" y="82">+ question_id: str</text>
+  <text class="node-sub" x="520" y="96">+ prompt: str</text>
+  <text class="node-sub" x="520" y="110">+ kind: radio|checkbox|text</text>
+  <text class="node-sub" x="520" y="122">+ options: list[QuestionOption]</text>
+
+  <rect class="box-accent" x="635" y="46" width="165" height="85"/>
+  <text class="node-title" x="717" y="65">PlannedAnswer</text>
+  <text class="node-sub" x="717" y="82">+ question_id: str</text>
+  <text class="node-sub" x="717" y="96">+ selected_option_ids: list</text>
+  <text class="node-sub" x="717" y="110">+ text_answer: str | None</text>
+  <text class="node-sub" x="717" y="122">+ confidence: float</text>
+
+  <rect class="box-warn" x="120" y="152" width="270" height="80"/>
+  <text class="node-title" x="255" y="172">OrchestratorSummary</text>
+  <text class="node-sub" x="255" y="189">+ final_status: RunTerminalStatus</text>
+  <text class="node-sub" x="255" y="203">+ questions_found / answered: int</text>
+  <text class="node-sub" x="255" y="217">+ score: str | None · token_usage: dict</text>
+
+  <rect class="box-primary" x="430" y="152" width="280" height="80"/>
+  <text class="node-title" x="570" y="172">HistoryEntry (history.json)</text>
+  <text class="node-sub" x="570" y="189">+ run_id: str · client_id_hash: str</text>
+  <text class="node-sub" x="570" y="203">+ status, phase, score, duration_seconds</text>
+  <text class="node-sub" x="570" y="217">+ gemini_tokens: {prompt, candidates, total}</text>
+
+  <line class="arrow" x1="200" y1="88" x2="225" y2="88"/>
+  <line class="arrow" x1="405" y1="88" x2="430" y2="88"/>
+  <line class="arrow" x1="610" y1="88" x2="635" y2="88"/>
+  <line class="arrow-blue" x1="390" y1="192" x2="430" y2="192"/>
+
+</svg>

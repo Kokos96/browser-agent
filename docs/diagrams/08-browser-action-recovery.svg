@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 210" width="100%">
+
+<defs>
+  <style>
+    .bg { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+    .zone { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-sec { fill: #fef2f2; stroke: #f87171; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-green { fill: #f0fdf4; stroke: #4ade80; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 6; }
+    .box-primary { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.8; rx: 6; }
+    .box-accent { fill: #ecfdf5; stroke: #059669; stroke-width: 1.8; rx: 6; }
+    .box-warn { fill: #fffbeb; stroke: #d97706; stroke-width: 1.8; rx: 6; }
+    .box-danger { fill: #fef2f2; stroke: #dc2626; stroke-width: 1.8; rx: 6; }
+    .box-purple { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 1.8; rx: 6; }
+    .box-dark { fill: #0f172a; stroke: #1e293b; stroke-width: 1.8; rx: 6; }
+    .title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 13px; font-weight: 700; fill: #0f172a; }
+    .zone-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11px; font-weight: 700; fill: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+    .node-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #0f172a; text-anchor: middle; }
+    .node-title-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+    .node-sub { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #475569; text-anchor: middle; }
+    .node-sub-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #cbd5e1; text-anchor: middle; }
+    .edge-label { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9px; font-weight: 600; fill: #1e293b; text-anchor: middle; }
+    .arrow { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    .arrow-blue { stroke: #2563eb; stroke-width: 1.8; fill: none; marker-end: url(#arrow-blue); }
+    .arrow-green { stroke: #059669; stroke-width: 1.8; fill: none; marker-end: url(#arrow-green); }
+    .arrow-red { stroke: #dc2626; stroke-width: 1.6; stroke-dasharray: 4,3; fill: none; marker-end: url(#arrow-red); }
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+  </marker>
+  <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="2" y="2" width="816" height="206"/>
+
+  <text class="title" x="20" y="26">Алгоритм виконання браузерних дій та багаторівневого відновлення (Action Recovery)</text>
+  <rect class="box-primary" x="18" y="58" width="135" height="62"/>
+  <text class="node-title" x="85" y="80">1. Пошук цілі</text>
+  <text class="node-sub" x="85" y="96">CSS-селектор, роль</text>
+  <text class="node-sub" x="85" y="109">або точний текст</text>
+
+  <rect class="box" x="172" y="58" width="135" height="62"/>
+  <text class="node-title" x="239" y="80">2. Прокрутка</text>
+  <text class="node-sub" x="239" y="96">scroll_into_view()</text>
+  <text class="node-sub" x="239" y="109">Перевірка видимості</text>
+
+  <rect class="box-accent" x="326" y="58" width="135" height="62"/>
+  <text class="node-title" x="393" y="80">3. Прямий клік</text>
+  <text class="node-sub" x="393" y="96">locator.click()</text>
+  <text class="node-sub" x="393" y="109">або radio.check()</text>
+
+  <rect class="box-warn" x="480" y="58" width="155" height="62"/>
+  <text class="node-title" x="557" y="80">4. Якщо перехоплено</text>
+  <text class="node-sub" x="557" y="96">Закриття cookie/modal</text>
+  <text class="node-sub" x="557" y="109">Клік по &lt;label&gt; / JS click</text>
+
+  <rect class="box-primary" x="654" y="58" width="148" height="62"/>
+  <text class="node-title" x="728" y="80">5. Верифікація DOM</text>
+  <text class="node-sub" x="728" y="96">Перевірка checked=true</text>
+  <text class="node-sub" x="728" y="109">або зміни URL/DOM</text>
+
+  <line class="arrow-blue" x1="153" y1="89" x2="172" y2="89"/>
+  <line class="arrow-blue" x1="307" y1="89" x2="326" y2="89"/>
+  <line class="arrow-red" x1="461" y1="89" x2="480" y2="89"/>
+  <line class="arrow-green" x1="635" y1="89" x2="654" y2="89"/>
+  <path class="arrow-green" d="M 393 120 L 393 155 L 728 155 L 728 120"/>
+  <text class="edge-label" x="560" y="148">Успішний клік з першої спроби</text>
+
+</svg>

@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 215" width="100%">
+
+<defs>
+  <style>
+    .bg { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+    .zone { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-sec { fill: #fef2f2; stroke: #f87171; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-green { fill: #f0fdf4; stroke: #4ade80; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 6; }
+    .box-primary { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.8; rx: 6; }
+    .box-accent { fill: #ecfdf5; stroke: #059669; stroke-width: 1.8; rx: 6; }
+    .box-warn { fill: #fffbeb; stroke: #d97706; stroke-width: 1.8; rx: 6; }
+    .box-danger { fill: #fef2f2; stroke: #dc2626; stroke-width: 1.8; rx: 6; }
+    .box-purple { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 1.8; rx: 6; }
+    .box-dark { fill: #0f172a; stroke: #1e293b; stroke-width: 1.8; rx: 6; }
+    .title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 13px; font-weight: 700; fill: #0f172a; }
+    .zone-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11px; font-weight: 700; fill: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+    .node-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #0f172a; text-anchor: middle; }
+    .node-title-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+    .node-sub { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #475569; text-anchor: middle; }
+    .node-sub-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #cbd5e1; text-anchor: middle; }
+    .edge-label { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9px; font-weight: 600; fill: #1e293b; text-anchor: middle; }
+    .arrow { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    .arrow-blue { stroke: #2563eb; stroke-width: 1.8; fill: none; marker-end: url(#arrow-blue); }
+    .arrow-green { stroke: #059669; stroke-width: 1.8; fill: none; marker-end: url(#arrow-green); }
+    .arrow-red { stroke: #dc2626; stroke-width: 1.6; stroke-dasharray: 4,3; fill: none; marker-end: url(#arrow-red); }
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+  </marker>
+  <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="2" y="2" width="816" height="211"/>
+
+  <text class="title" x="20" y="26">Конвеєр розпізнавання питань та інтелектуального планування відповідей</text>
+  <rect class="box" x="18" y="55" width="140" height="75"/>
+  <text class="node-title" x="88" y="78">1. DOM Snapshot</text>
+  <text class="node-sub" x="88" y="95">Інтерактивні вузли,</text>
+  <text class="node-sub" x="88" y="109">radio/checkbox/select,</text>
+  <text class="node-sub" x="88" y="122">картки та заголовки</text>
+
+  <rect class="box-primary" x="176" y="55" width="150" height="75"/>
+  <text class="node-title" x="251" y="78">2. Мульти-екстрактор</text>
+  <text class="node-sub" x="251" y="95">• Групи радіокнопок</text>
+  <text class="node-sub" x="251" y="109">• Блоки .question / fieldset</text>
+  <text class="node-sub" x="251" y="122">• Single-question screen</text>
+
+  <rect class="box-warn" x="344" y="55" width="140" height="75"/>
+  <text class="node-title" x="414" y="78">3. Фільтр стану</text>
+  <text class="node-sub" x="414" y="95">Відсіювання вже</text>
+  <text class="node-sub" x="414" y="109">відповідених питань</text>
+  <text class="node-sub" x="414" y="122">(checked / active)</text>
+
+  <rect class="box-purple" x="502" y="55" width="150" height="75"/>
+  <text class="node-title" x="577" y="78">4. AnswerPlanner</text>
+  <text class="node-sub" x="577" y="95">Пакетний промпт</text>
+  <text class="node-sub" x="577" y="109">до Gemini API (1 виклик</text>
+  <text class="node-sub" x="577" y="122">на всі питання екрана)</text>
+
+  <rect class="box-accent" x="670" y="55" width="132" height="75"/>
+  <text class="node-title" x="736" y="78">5. Валідація плану</text>
+  <text class="node-sub" x="736" y="95">Pydantic JSON Schema</text>
+  <text class="node-sub" x="736" y="109">Зіставлення індексів</text>
+  <text class="node-sub" x="736" y="122">+ Safe Fallback</text>
+
+  <line class="arrow-blue" x1="158" y1="92" x2="176" y2="92"/>
+  <line class="arrow-blue" x1="326" y1="92" x2="344" y2="92"/>
+  <line class="arrow-blue" x1="484" y1="92" x2="502" y2="92"/>
+  <line class="arrow-green" x1="652" y1="92" x2="670" y2="92"/>
+
+  <rect class="box" x="176" y="148" width="476" height="45"/>
+  <text class="node-title" x="414" y="168">Економія токенів та низька латентність</text>
+  <text class="node-sub" x="414" y="183">Пакетне планування зменшує кількість LLM-запитів у 3–10 разів (середня витрата: ~600–900 токенів на тест)</text>
+
+</svg>

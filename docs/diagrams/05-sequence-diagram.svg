@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 290" width="100%">
+
+<defs>
+  <style>
+    .bg { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+    .zone { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-sec { fill: #fef2f2; stroke: #f87171; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-green { fill: #f0fdf4; stroke: #4ade80; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 6; }
+    .box-primary { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.8; rx: 6; }
+    .box-accent { fill: #ecfdf5; stroke: #059669; stroke-width: 1.8; rx: 6; }
+    .box-warn { fill: #fffbeb; stroke: #d97706; stroke-width: 1.8; rx: 6; }
+    .box-danger { fill: #fef2f2; stroke: #dc2626; stroke-width: 1.8; rx: 6; }
+    .box-purple { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 1.8; rx: 6; }
+    .box-dark { fill: #0f172a; stroke: #1e293b; stroke-width: 1.8; rx: 6; }
+    .title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 13px; font-weight: 700; fill: #0f172a; }
+    .zone-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11px; font-weight: 700; fill: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+    .node-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #0f172a; text-anchor: middle; }
+    .node-title-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+    .node-sub { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #475569; text-anchor: middle; }
+    .node-sub-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #cbd5e1; text-anchor: middle; }
+    .edge-label { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9px; font-weight: 600; fill: #1e293b; text-anchor: middle; }
+    .arrow { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    .arrow-blue { stroke: #2563eb; stroke-width: 1.8; fill: none; marker-end: url(#arrow-blue); }
+    .arrow-green { stroke: #059669; stroke-width: 1.8; fill: none; marker-end: url(#arrow-green); }
+    .arrow-red { stroke: #dc2626; stroke-width: 1.6; stroke-dasharray: 4,3; fill: none; marker-end: url(#arrow-red); }
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+  </marker>
+  <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="2" y="2" width="816" height="286"/>
+
+  <text class="title" x="20" y="24">UML Sequence-діаграма життєвого циклу сеансу</text>
+  <!-- Lifelines -->
+  <rect class="box-primary" x="20" y="38" width="95" height="32"/><text class="node-title" x="67" y="58">Користувач</text>
+  <rect class="box-primary" x="145" y="38" width="105" height="32"/><text class="node-title" x="197" y="58">Frontend SPA</text>
+  <rect class="box-accent" x="280" y="38" width="110" height="32"/><text class="node-title" x="335" y="58">FastAPI Server</text>
+  <rect class="box-purple" x="420" y="38" width="115" height="32"/><text class="node-title" x="477" y="58">QuizOrchestrator</text>
+  <rect class="box" x="565" y="38" width="110" height="32"/><text class="node-title" x="620" y="58">Playwright DOM</text>
+  <rect class="box-warn" x="700" y="38" width="100" height="32"/><text class="node-title" x="750" y="58">Gemini API</text>
+
+  <line stroke="#94a3b8" stroke-dasharray="4,4" x1="67" y1="70" x2="67" y2="275"/>
+  <line stroke="#94a3b8" stroke-dasharray="4,4" x1="197" y1="70" x2="197" y2="275"/>
+  <line stroke="#94a3b8" stroke-dasharray="4,4" x1="335" y1="70" x2="335" y2="275"/>
+  <line stroke="#94a3b8" stroke-dasharray="4,4" x1="477" y1="70" x2="477" y2="275"/>
+  <line stroke="#94a3b8" stroke-dasharray="4,4" x1="620" y1="70" x2="620" y2="275"/>
+  <line stroke="#94a3b8" stroke-dasharray="4,4" x1="750" y1="70" x2="750" y2="275"/>
+
+  <line class="arrow-blue" x1="67" y1="90" x2="197" y2="90"/><text class="edge-label" x="132" y="85">1. Натискає «Запустити»</text>
+  <line class="arrow-blue" x1="197" y1="108" x2="335" y2="108"/><text class="edge-label" x="266" y="103">2. POST /run-agent</text>
+  <line class="arrow-green" x1="335" y1="126" x2="477" y2="126"/><text class="edge-label" x="406" y="121">3. Spawn main.py</text>
+  <line class="arrow" x1="335" y1="142" x2="197" y2="142"/><text class="edge-label" x="266" y="137">4. 200 OK {run_id}</text>
+  <line class="arrow-blue" x1="477" y1="160" x2="620" y2="160"/><text class="edge-label" x="548" y="155">5. goto(url) + observe()</text>
+  <line class="arrow" x1="620" y1="178" x2="477" y2="178"/><text class="edge-label" x="548" y="173">6. PageObservation + Questions</text>
+  <line class="arrow-blue" x1="477" y1="196" x2="750" y2="196"/><text class="edge-label" x="613" y="191">7. Batch Prompt (JSON Schema)</text>
+  <line class="arrow-green" x1="750" y1="214" x2="477" y2="214"/><text class="edge-label" x="613" y="209">8. PlannedAnswers + Tokens</text>
+  <line class="arrow-green" x1="477" y1="232" x2="620" y2="232"/><text class="edge-label" x="548" y="227">9. Вибір відповідей + Submit</text>
+  <line class="arrow" x1="477" y1="250" x2="335" y2="250"/><text class="edge-label" x="406" y="245">10. save_history() (score, tokens)</text>
+  <line class="arrow-green" x1="197" y1="268" x2="67" y2="268"/><text class="edge-label" x="132" y="263">11. Звіт (3/3, 892 токени)</text>
+
+</svg>

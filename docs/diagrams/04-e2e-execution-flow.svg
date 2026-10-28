@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 210" width="100%">
+
+<defs>
+  <style>
+    .bg { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+    .zone { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-sec { fill: #fef2f2; stroke: #f87171; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .zone-green { fill: #f0fdf4; stroke: #4ade80; stroke-width: 1.5; stroke-dasharray: 5,4; rx: 8; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 6; }
+    .box-primary { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.8; rx: 6; }
+    .box-accent { fill: #ecfdf5; stroke: #059669; stroke-width: 1.8; rx: 6; }
+    .box-warn { fill: #fffbeb; stroke: #d97706; stroke-width: 1.8; rx: 6; }
+    .box-danger { fill: #fef2f2; stroke: #dc2626; stroke-width: 1.8; rx: 6; }
+    .box-purple { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 1.8; rx: 6; }
+    .box-dark { fill: #0f172a; stroke: #1e293b; stroke-width: 1.8; rx: 6; }
+    .title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 13px; font-weight: 700; fill: #0f172a; }
+    .zone-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11px; font-weight: 700; fill: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+    .node-title { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #0f172a; text-anchor: middle; }
+    .node-title-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 11.5px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+    .node-sub { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #475569; text-anchor: middle; }
+    .node-sub-light { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9.5px; font-weight: 400; fill: #cbd5e1; text-anchor: middle; }
+    .edge-label { font-family: 'Inter', 'Segoe UI', 'DejaVu Sans', sans-serif; font-size: 9px; font-weight: 600; fill: #1e293b; text-anchor: middle; }
+    .arrow { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+    .arrow-blue { stroke: #2563eb; stroke-width: 1.8; fill: none; marker-end: url(#arrow-blue); }
+    .arrow-green { stroke: #059669; stroke-width: 1.8; fill: none; marker-end: url(#arrow-green); }
+    .arrow-red { stroke: #dc2626; stroke-width: 1.6; stroke-dasharray: 4,3; fill: none; marker-end: url(#arrow-red); }
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+  </marker>
+  <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="2" y="2" width="816" height="206"/>
+
+  <text class="title" x="20" y="26">Наскрізний конвеєр виконання запиту (End-to-End Execution Flow)</text>
+  <rect class="box-primary" x="18" y="55" width="115" height="62"/>
+  <text class="node-title" x="75" y="80">1. Старт у UI</text>
+  <text class="node-sub" x="75" y="95">URL + Профіль</text>
+  <text class="node-sub" x="75" y="107">POST /run-agent</text>
+
+  <rect class="box-danger" x="150" y="55" width="115" height="62"/>
+  <text class="node-title" x="207" y="80">2. SSRF Guard</text>
+  <text class="node-sub" x="207" y="95">DNS + IP перевірка</text>
+  <text class="node-sub" x="207" y="107">Публічний HTTPS</text>
+
+  <rect class="box" x="282" y="55" width="115" height="62"/>
+  <text class="node-title" x="339" y="80">3. Subprocess</text>
+  <text class="node-sub" x="339" y="95">Ініціалізація Run ID</text>
+  <text class="node-sub" x="339" y="107">Chromium Context</text>
+
+  <rect class="box-primary" x="414" y="55" width="125" height="62"/>
+  <text class="node-title" x="476" y="80">4. Стан і Профіль</text>
+  <text class="node-sub" x="476" y="95">PageStateDetector</text>
+  <text class="node-sub" x="476" y="107">Автозаповнення</text>
+
+  <rect class="box-purple" x="556" y="55" width="125" height="62"/>
+  <text class="node-title" x="618" y="80">5. Питання + ШІ</text>
+  <text class="node-sub" x="618" y="95">QuestionExtractor</text>
+  <text class="node-sub" x="618" y="107">Gemini AnswerPlanner</text>
+
+  <rect class="box-accent" x="698" y="55" width="104" height="62"/>
+  <text class="node-title" x="750" y="80">6. Дії і Бал</text>
+  <text class="node-sub" x="750" y="95">Кліки в DOM</text>
+  <text class="node-sub" x="750" y="107">Збір результату</text>
+
+  <line class="arrow-blue" x1="133" y1="86" x2="150" y2="86"/>
+  <line class="arrow-blue" x1="265" y1="86" x2="282" y2="86"/>
+  <line class="arrow-blue" x1="397" y1="86" x2="414" y2="86"/>
+  <line class="arrow-blue" x1="539" y1="86" x2="556" y2="86"/>
+  <line class="arrow-green" x1="681" y1="86" x2="698" y2="86"/>
+
+  <rect class="box-warn" x="150" y="142" width="531" height="48"/>
+  <text class="node-title" x="415" y="162">Зворотний потік телеметрії (Live Activity + Atomic Persistence)</text>
+  <text class="node-sub" x="415" y="178">Структуровані логи [PHASE] → api_server.py → results/history.json → Відображення балів і токенів у SPA</text>
+  <line class="arrow" x1="750" y1="117" x2="750" y2="166"/>
+  <line class="arrow" x1="750" y1="166" x2="681" y2="166"/>
+  <line class="arrow" x1="150" y1="166" x2="75" y2="117"/>
+
+</svg>
